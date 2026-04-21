@@ -40,6 +40,7 @@ class UserController {
             const userId = req.user?.user_id;
             
             // ✅ DEBUG LOGS
+            console.log("Fetching profile for user:", userId);
             console.log("PROFILE userId:", userId);
 
             if (!userId) {

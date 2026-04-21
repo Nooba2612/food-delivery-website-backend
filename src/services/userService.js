@@ -33,7 +33,15 @@ const getProfile = async (userId) => {
                 {
                     model: addressModel,
                     as: "addresses",
-                    attributes: { exclude: ["userId"] },
+                    attributes: [
+                        "addressId",
+                        "street",
+                        "ward",
+                        "city",
+                        "country",
+                        "isDefault",
+                        "fullAddress"
+                    ]
                 },
             ],
         });

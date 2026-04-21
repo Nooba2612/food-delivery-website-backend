@@ -54,10 +54,9 @@ CREATE TABLE Addresses (
     user_id CHAR(36) NOT NULL,
 
     street VARCHAR(500) NOT NULL,
-    ward VARCHAR(255),
-    district VARCHAR(255),
+    ward VARCHAR(255) NOT NULL,
     city VARCHAR(255) NOT NULL,
-    zip_code VARCHAR(20),
+
     country VARCHAR(100) DEFAULT 'Vietnam',
 
     label ENUM('Home', 'Work', 'Other') DEFAULT 'Home',
@@ -70,6 +69,8 @@ CREATE TABLE Addresses (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+
+    INDEX idx_user (user_id),
     INDEX idx_user_default (user_id, is_default)
 );
 
@@ -271,7 +272,7 @@ CREATE TABLE UserVoucher (
 
 DELIMITER $$
 
--- Trigger for Addresses UUID
+-- 1. AUTO UUID
 CREATE TRIGGER insert_addresses_id_trigger
 BEFORE INSERT ON Addresses
 FOR EACH ROW
@@ -281,16 +282,28 @@ BEGIN
     END IF;
 END$$
 
--- Ensure only one default address per user
-CREATE TRIGGER ensure_one_default_address
-AFTER INSERT ON Addresses
+-- 2. BEFORE INSERT DEFAULT
+CREATE TRIGGER before_insert_default_address
+BEFORE INSERT ON Addresses
 FOR EACH ROW
 BEGIN
     IF NEW.is_default = TRUE THEN
-        UPDATE Addresses 
-        SET is_default = FALSE 
+        UPDATE Addresses
+        SET is_default = FALSE
+        WHERE user_id = NEW.user_id;
+    END IF;
+END$$
+
+-- 3. BEFORE UPDATE DEFAULT (SAFE VERSION)
+CREATE TRIGGER before_update_default_address
+BEFORE UPDATE ON Addresses
+FOR EACH ROW
+BEGIN
+    IF NEW.is_default = TRUE AND OLD.is_default = FALSE THEN
+        UPDATE Addresses
+        SET is_default = FALSE
         WHERE user_id = NEW.user_id
-        AND address_id <> NEW.address_id;
+        AND address_id <> OLD.address_id;
     END IF;
 END$$
 
