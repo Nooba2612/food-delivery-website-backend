@@ -504,6 +504,11 @@ class ChatService {
             const idsToAdd = Array.isArray(memberIds) ? memberIds : [memberIds];
             const addedMembers = [];
 
+            const adminUser = await userService.getUserById(userId);
+            const adminName = adminUser?.fullname || adminUser?.username || "Admin";
+
+            const systemMessages = [];
+
             for (const memberId of idsToAdd) {
                 // Check if already a member
                 const alreadyMember = members.find((m) => m.user_id === memberId);
@@ -519,17 +524,30 @@ class ChatService {
                 // Send system message
                 const newMember = await userService.getUserById(memberId);
                 if (newMember) {
-                    await MessageModel.create({
+                    const memberName = newMember.fullname || newMember.username || "User";
+                    const sysMsg = await MessageModel.create({
                         conversation_id: conversationId,
                         sender_id: userId,
-                        content: `Added ${newMember.fullname || newMember.username}`,
+                        content: `${adminName} added ${memberName}`,
                         type: "system",
+                        metadata: {
+                            action: "member_added",
+                            adminId: userId,
+                            adminName,
+                            addedMemberId: memberId,
+                            addedMemberName: memberName
+                        }
                     });
+
+                    // Update conversation last message
+                    await ConversationModel.updateLastMessage(conversationId, sysMsg.message_id, new Date().toISOString());
+
+                    systemMessages.push(toCamelCase(sysMsg));
                     addedMembers.push(memberId);
                 }
             }
 
-            return { success: true, addedMembers };
+            return { success: true, addedMembers, systemMessages };
         } catch (error) {
             throw error;
         }
@@ -562,18 +580,36 @@ class ChatService {
 
             await ConversationParticipantModel.remove(conversationId, memberId);
 
-            // Send system message
-            if (userId !== memberId) {
-                const removedMember = await userService.getUserById(memberId);
-                await MessageModel.create({
-                    conversation_id: conversationId,
-                    sender_id: userId,
-                    content: `Removed ${removedMember.fullname || removedMember.username}`,
-                    type: "system",
-                });
-            }
+            const adminUser = await userService.getUserById(userId);
+            const removedUser = await userService.getUserById(memberId);
+            const adminName = adminUser?.fullname || adminUser?.username || "Admin";
+            const removedName = removedUser?.fullname || removedUser?.username || "User";
 
-            return { success: true };
+            // Send system message
+            const systemMsg = await MessageModel.create({
+                conversation_id: conversationId,
+                sender_id: userId,
+                content: `${adminName} removed ${removedName}`,
+                type: "system",
+                metadata: {
+                    action: "member_removed",
+                    adminId: userId,
+                    adminName,
+                    removedMemberId: memberId,
+                    removedMemberName: removedName
+                }
+            });
+
+            // Update conversation last message
+            await ConversationModel.updateLastMessage(conversationId, systemMsg.message_id, new Date().toISOString());
+
+            return { 
+                success: true, 
+                adminName, 
+                removedName, 
+                memberId,
+                systemMessage: toCamelCase(systemMsg)
+            };
         } catch (error) {
             throw error;
         }
@@ -709,6 +745,11 @@ class ChatService {
                 sender_id: userId,
                 content: `${adminName} disbanded this group`,
                 type: "system",
+                metadata: {
+                    action: "group_disbanded",
+                    adminId: userId,
+                    adminName
+                }
             });
 
             // Update conversation last message for the disbanding event

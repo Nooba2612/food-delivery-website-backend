@@ -618,12 +618,35 @@ const addMemberToGroup = async (req, res) => {
 
         // Emit real-time member added event
         if (io) {
-            const { emitMemberAdded } = require("@websocket");
+            const { emitMemberAdded, emitMessageToConversation, emitConversationUpdated } = require("@websocket");
             const ids = Array.isArray(memberIds) ? memberIds : [memberIds];
+            
+            // Fetch updated member list to notify everyone
+            const members = await require("@models/ConversationParticipantModel").findMembersOfConversation(conversationId);
+            const allMemberIds = members.map(m => m.user_id);
+
             for (const memberId of ids) {
                 emitMemberAdded(io, conversationId, {
                     memberId,
                     joinedAt: new Date().toISOString(),
+                });
+                
+                // Notify the newly added user to refresh their conversation list
+                const userRoom = `user:${memberId}`;
+                io.to(userRoom).emit("member_added_to_new_group", {
+                    conversationId,
+                    addedBy: userId
+                });
+            }
+            
+            // Broadcast system messages
+            for (const sysMsg of result.systemMessages || []) {
+                emitMessageToConversation(io, conversationId, sysMsg);
+                
+                emitConversationUpdated(io, conversationId, allMemberIds, {
+                    lastMessage: sysMsg,
+                    lastMessageTimestamp: sysMsg.createdAt,
+                    unreadCount: 0,
                 });
             }
         }
@@ -659,8 +682,44 @@ const removeMemberFromGroup = async (req, res) => {
 
         // Emit real-time member removed event
         if (io) {
-            const { emitMemberRemoved } = require("@websocket");
+            const { emitMemberRemoved, emitConversationUpdated, emitMessageToConversation } = require("@websocket");
+            
+            // 1. Notify the whole conversation room about the removal
             emitMemberRemoved(io, conversationId, memberId);
+
+            // 1.5. Broadcast the system message to the conversation
+            if (result.systemMessage) {
+                emitMessageToConversation(io, conversationId, result.systemMessage);
+            }
+            
+            // 2. Also notify the removed member's personal room (important for real-time kick)
+            const userRoom = `user:${memberId}`;
+            io.to(userRoom).emit("member_removed", {
+                conversationId,
+                memberId,
+                wasKicked: true,
+                timestamp: new Date().toISOString(),
+            });
+
+            // 3. Update conversation list for remaining members
+            const members = await require("@models/ConversationParticipantModel").findMembersOfConversation(conversationId);
+            const remainingMemberIds = members.map((m) => m.user_id);
+            
+            emitConversationUpdated(io, conversationId, remainingMemberIds, {
+                lastMessage: result.systemMessage,
+                lastMessageTimestamp: result.systemMessage.createdAt,
+                unreadCount: 0,
+            });
+
+            // 4. Update conversation list for the removed member (show them they were kicked)
+            emitConversationUpdated(io, conversationId, [memberId], {
+                lastMessage: {
+                    ...result.systemMessage,
+                    content: `You were removed from the group by ${result.adminName}`
+                },
+                lastMessageTimestamp: result.systemMessage.createdAt,
+                unreadCount: 0,
+            });
         }
 
         res.status(200).json({
