@@ -1,6 +1,8 @@
 const socketIO = require("socket.io");
 const jwt = require("jsonwebtoken");
 const CallModel = require("@models/callModel");
+const ChatService = require("@services/chatService");
+const ConversationParticipantModel = require("@models/ConversationParticipantModel");
 
 // Store active user connections
 // Format: { userId: { socketId: socket, conversationIds: [...] } }
@@ -135,17 +137,58 @@ const initializeWebSocket = (server) => {
         });
 
         // Reject call
-        socket.on("reject_call", (data) => {
+        socket.on("reject_call", async (data) => {
             const { callId, callerId, reason } = data;
             const callerRoom = `user:${callerId}`;
 
             console.log(`❌ Call rejected: ${callId} by user ${userId} (Reason: ${reason})`);
+
+            // Update call status to "rejected"
+            try {
+                if (callId) {
+                    await CallModel.update(callId, {
+                        status: "rejected",
+                    });
+                    console.log(`✅ Call status updated to rejected: ${callId}`);
+                }
+            } catch (error) {
+                console.error(`❌ Failed to update call status: ${error.message}`);
+            }
 
             io.to(callerRoom).emit("call_rejected", {
                 callId,
                 reason,
                 timestamp: new Date().toISOString(),
             });
+        });
+
+        // Backup event name for reject call
+        socket.on("call_rejected", async (data) => {
+            const { callId, toUserId, recipientId, reason } = data;
+            const targetUserId = toUserId || recipientId;
+            const callerRoom = `user:${targetUserId}`;
+
+            console.log(`❌ Call rejected (backup): ${callId} by user ${userId}, target: ${targetUserId}`);
+
+            // Update call status to "rejected"
+            try {
+                if (callId) {
+                    await CallModel.update(callId, {
+                        status: "rejected",
+                    });
+                    console.log(`✅ Call status updated to rejected: ${callId}`);
+                }
+            } catch (error) {
+                console.error(`❌ Failed to update call status: ${error.message}`);
+            }
+
+            if (targetUserId) {
+                io.to(callerRoom).emit("call_rejected", {
+                    callId,
+                    reason: reason || "user_declined",
+                    timestamp: new Date().toISOString(),
+                });
+            }
         });
 
         // Cancel call (caller cancels before recipient accepts)
@@ -241,6 +284,55 @@ const initializeWebSocket = (server) => {
                     callId,
                     callIdType: typeof callId,
                 });
+            }
+        });
+
+        // Save call message (sent by frontend when call ends or is rejected)
+        socket.on("save_call_message", async (data) => {
+            const { conversationId, content, type, callData } = data;
+            console.log(`💬 [save_call_message] Saving call message for conversation ${conversationId}`);
+
+            try {
+                // 1. Save to database using ChatService
+                const message = await ChatService.sendMessage(userId, conversationId, {
+                    content,
+                    type: type || "system_call",
+                    callData
+                });
+
+                // 2. Broadcast new message to conversation room
+                const roomName = `conversation_${conversationId}`;
+                io.to(roomName).emit("new_message", {
+                    ...message,
+                    timestamp: new Date().toISOString()
+                });
+
+                // 3. Emit conversation update to all members for sidebar refresh
+                const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+                
+                for (const member of members) {
+                    // Update unread count for everyone except the sender
+                    // Note: ChatService already updated unread counts in DB
+                    io.to(`user:${member.user_id}`).emit("conversation_updated", {
+                        conversationId,
+                        lastMessage: {
+                            messageId: message.messageId,
+                            content: message.content,
+                            type: message.type,
+                            senderName: message.senderName,
+                            senderAvatar: message.senderAvatar,
+                            createdAt: message.createdAt
+                        },
+                        lastMessageTimestamp: message.createdAt,
+                        lastMessageId: message.messageId,
+                        unreadCount: member.user_id !== userId ? (member.unread_count || 0) : 0,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+
+                console.log(`✅ [save_call_message] Call message saved and broadcasted`);
+            } catch (error) {
+                console.error(`❌ [save_call_message] Error:`, error.message);
             }
         });
 

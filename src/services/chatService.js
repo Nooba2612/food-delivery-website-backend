@@ -235,6 +235,7 @@ class ChatService {
                 mentions: messageData.mentions || [],
                 attachments: messageData.attachments || [],
                 reply_to_id: messageData.replyToId || null,
+                call_data: messageData.callData || null,
             });
 
             // Update conversation last message
