@@ -48,8 +48,16 @@ class ConversationModel {
     static async update(conversationId, updateData) {
         const now = new Date().toISOString();
         const updateFields = Object.keys(updateData)
-            .map((key) => `${key} = :${key}`)
+            .map((key) => `#${key} = :${key}`)
             .join(", ");
+
+        const expressionAttributeNames = Object.keys(updateData).reduce(
+            (acc, key) => {
+                acc[`#${key}`] = key;
+                return acc;
+            },
+            { "#updated_at": "updated_at" },
+        );
 
         const expressionAttributeValues = Object.keys(updateData).reduce(
             (acc, key) => {
@@ -62,7 +70,8 @@ class ConversationModel {
         const params = {
             TableName: TABLE_NAME,
             Key: { conversation_id: conversationId },
-            UpdateExpression: `SET ${updateFields}, updated_at = :updated_at`,
+            UpdateExpression: `SET ${updateFields}, #updated_at = :updated_at`,
+            ExpressionAttributeNames: expressionAttributeNames,
             ExpressionAttributeValues: expressionAttributeValues,
             ReturnValues: "ALL_NEW",
         };

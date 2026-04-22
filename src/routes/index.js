@@ -18,6 +18,7 @@ const routes = (app) => {
     app.use("/api/voucher", authMiddleware, voucherRouter);
     app.use("/api/category", categoryRouter);
     app.use("/api/conversations", chatRouter);
+    app.use("/api/messages", authMiddleware, chatRouter);
     app.use("/api/calls", authMiddleware, callRouter);
 };
 

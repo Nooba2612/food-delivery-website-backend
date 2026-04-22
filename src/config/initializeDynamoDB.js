@@ -139,7 +139,7 @@ const createCallsTable = async () => {
             { AttributeName: "call_id", AttributeType: "S" },
             { AttributeName: "conversation_id", AttributeType: "S" },
             { AttributeName: "initiator_id", AttributeType: "S" },
-            { AttributeName: "created_at", AttributeType: "N" },
+            { AttributeName: "created_at", AttributeType: "S" },
             { AttributeName: "status", AttributeType: "S" },
         ],
         GlobalSecondaryIndexes: [

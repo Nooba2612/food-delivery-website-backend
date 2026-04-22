@@ -28,6 +28,17 @@ app.use(
 // routing
 routes(app);
 
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        message: "Requested resource not found",
+        path: req.path,
+        method: req.method,
+        receivedUrl: `${req.method} ${req.path}`,
+    });
+});
+
 // Store io instance globally for services to access
 app.set("io", null);
 

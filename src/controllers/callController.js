@@ -6,13 +6,46 @@ const CallService = require("@services/callService");
  */
 const initiateCall = async (req, res) => {
     try {
-        const userId = req.user.user_id;
-        const { recipientId, conversationId, callType } = req.body;
+        console.log("🔴 [ENTER initiateCall] - Request received!");
+        console.log("🔴 Headers:", req.headers);
+        console.log("🔴 req.user:", req.user);
 
-        if (!recipientId || !conversationId || !callType) {
+        const userId = req.user?.user_id;
+        const { recipientId, conversationId, callType } = req.body;
+        const io = req.app.get("io");
+
+        console.log(`📞 initiateCall request from ${userId}:`, { recipientId, conversationId, callType });
+
+        // Validation with detailed error messages
+        if (!recipientId) {
             return res.status(400).json({
                 success: false,
-                message: "recipientId, conversationId, and callType are required",
+                message: "recipientId is required",
+                received: { recipientId },
+            });
+        }
+
+        if (!conversationId) {
+            return res.status(400).json({
+                success: false,
+                message: "conversationId is required",
+                received: { conversationId },
+            });
+        }
+
+        if (!callType) {
+            return res.status(400).json({
+                success: false,
+                message: "callType is required (voice or video)",
+                received: { callType },
+            });
+        }
+
+        if (!["voice", "video"].includes(callType)) {
+            return res.status(400).json({
+                success: false,
+                message: "callType must be 'voice' or 'video'",
+                received: { callType },
             });
         }
 
@@ -23,16 +56,38 @@ const initiateCall = async (req, res) => {
             });
         }
 
+        console.log(`✅ Validation passed, calling CallService.initiateCall...`);
         const call = await CallService.initiateCall(userId, recipientId, conversationId, callType);
+        console.log(`✅ Call created:`, { call_id: call.call_id, status: call.status });
+
+        // Emit incoming call event to recipient
+        if (io) {
+            io.to(`user:${recipientId}`).emit("incoming_call", {
+                callId: call.call_id,
+                callerId: userId,
+                callerName: req.user?.full_name || req.user?.username || "Unknown",
+                callerAvatar: req.user?.avatar || null,
+                callType,
+                conversationId,
+                timestamp: new Date().toISOString(),
+            });
+            console.log(`📱 incoming_call emitted to user:${recipientId} with callId: ${call.call_id}`);
+        }
 
         res.status(201).json({
             success: true,
             data: call,
         });
     } catch (error) {
+        console.error(`❌ initiateCall error:`, {
+            message: error.message,
+            stack: error.stack,
+            code: error.code,
+        });
         res.status(400).json({
             success: false,
             message: error.message,
+            error: process.env.NODE_ENV === "development" ? error.message : undefined,
         });
     }
 };
@@ -44,6 +99,7 @@ const initiateCall = async (req, res) => {
 const acceptCall = async (req, res) => {
     try {
         const { callId } = req.params;
+        const userId = req.user.user_id;
         const io = req.app.get("io");
 
         if (!callId) {
@@ -53,14 +109,48 @@ const acceptCall = async (req, res) => {
             });
         }
 
-        // Note: recipientSocketId should be captured from socket connection
-        const result = await CallService.acceptCall(callId, "");
+        // Get the call to find the initiator
+        const CallModel = require("@models/callModel");
+        const call = await CallModel.findById(callId);
+
+        if (!call) {
+            return res.status(404).json({
+                success: false,
+                message: "Call not found",
+            });
+        }
+
+        // Verify the current user is the recipient
+        if (call.recipient_id !== userId) {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized to accept this call",
+            });
+        }
+
+        const result = await CallService.acceptCall(callId, req.user?.socket_id || "");
+
+        console.log(`✅ Call accepted: ${callId}`, {
+            initiator_id: call.initiator_id,
+            recipient_id: userId,
+            io_exists: !!io,
+        });
 
         // Emit event to initiator
-        if (io) {
-            io.emit("call_accepted", {
+        if (io && call.initiator_id) {
+            io.to(`user:${call.initiator_id}`).emit("call_accepted", {
                 callId,
+                recipientId: userId,
+                recipientSocketId: req.user?.socket_id || "",
+                recipientName: req.user?.full_name || req.user?.username || "Unknown",
+                recipientAvatar: req.user?.avatar || null,
                 timestamp: new Date().toISOString(),
+            });
+            console.log(`📱 call_accepted emitted to user:${call.initiator_id} with callId: ${callId}`);
+        } else {
+            console.warn(`⚠️  Cannot emit call_accepted:`, {
+                has_io: !!io,
+                initiator_id: call.initiator_id,
             });
         }
 
@@ -84,6 +174,7 @@ const rejectCall = async (req, res) => {
     try {
         const { callId } = req.params;
         const { reason = "user_declined" } = req.body;
+        const userId = req.user.user_id;
         const io = req.app.get("io");
 
         if (!callId) {
@@ -93,11 +184,31 @@ const rejectCall = async (req, res) => {
             });
         }
 
-        const call = await CallService.rejectCall(callId, reason);
+        // Get the call to find the initiator
+        const CallModel = require("@models/callModel");
+        const call = await CallModel.findById(callId);
 
-        // Emit event to initiator
-        if (io) {
-            io.emit("call_rejected", {
+        if (!call) {
+            return res.status(404).json({
+                success: false,
+                message: "Call not found",
+            });
+        }
+
+        // Verify the current user can reject this call (recipient or initiator)
+        if (call.initiator_id !== userId && call.recipient_id !== userId) {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized to reject this call",
+            });
+        }
+
+        const call_updated = await CallService.rejectCall(callId, reason);
+
+        // Emit event to the other party
+        const otherUserId = call.initiator_id === userId ? call.recipient_id : call.initiator_id;
+        if (io && otherUserId) {
+            io.to(`user:${otherUserId}`).emit("call_rejected", {
                 callId,
                 reason,
                 timestamp: new Date().toISOString(),
@@ -106,7 +217,66 @@ const rejectCall = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            data: call,
+            data: call_updated,
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+/**
+ * Cancel a call
+ * POST /api/calls/:callId/cancel
+ */
+const cancelCall = async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const userId = req.user.user_id;
+        const io = req.app.get("io");
+
+        if (!callId) {
+            return res.status(400).json({
+                success: false,
+                message: "callId is required",
+            });
+        }
+
+        // Get the call
+        const CallModel = require("@models/callModel");
+        const call = await CallModel.findById(callId);
+
+        if (!call) {
+            return res.status(404).json({
+                success: false,
+                message: "Call not found",
+            });
+        }
+
+        // Verify the current user is the initiator (only initiator can cancel)
+        if (call.initiator_id !== userId) {
+            return res.status(403).json({
+                success: false,
+                message: "Only call initiator can cancel",
+            });
+        }
+
+        const call_updated = await CallService.cancelCall(callId);
+
+        // Emit event to recipient
+        if (io && call.recipient_id) {
+            io.to(`user:${call.recipient_id}`).emit("call_cancelled", {
+                callId,
+                reason: "Caller cancelled",
+                timestamp: new Date().toISOString(),
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: call_updated,
         });
     } catch (error) {
         res.status(400).json({
@@ -123,6 +293,7 @@ const rejectCall = async (req, res) => {
 const endCall = async (req, res) => {
     try {
         const { callId } = req.params;
+        const userId = req.user.user_id;
         const io = req.app.get("io");
 
         if (!callId) {
@@ -132,20 +303,40 @@ const endCall = async (req, res) => {
             });
         }
 
-        const call = await CallService.endCall(callId);
+        // Get the call to find the other party
+        const CallModel = require("@models/callModel");
+        const call = await CallModel.findById(callId);
 
-        // Emit event
-        if (io) {
-            io.emit("call_ended", {
+        if (!call) {
+            return res.status(404).json({
+                success: false,
+                message: "Call not found",
+            });
+        }
+
+        // Verify the current user is part of this call
+        if (call.initiator_id !== userId && call.recipient_id !== userId) {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized to end this call",
+            });
+        }
+
+        const call_updated = await CallService.endCall(callId);
+
+        // Emit event to the other party
+        const otherUserId = call.initiator_id === userId ? call.recipient_id : call.initiator_id;
+        if (io && otherUserId) {
+            io.to(`user:${otherUserId}`).emit("call_ended", {
                 callId,
-                duration: call.duration_seconds,
+                duration: call_updated?.duration_seconds || 0,
                 timestamp: new Date().toISOString(),
             });
         }
 
         res.status(200).json({
             success: true,
-            data: call,
+            data: call_updated,
         });
     } catch (error) {
         res.status(400).json({
@@ -248,6 +439,7 @@ module.exports = {
     initiateCall,
     acceptCall,
     rejectCall,
+    cancelCall,
     endCall,
     getCallHistory,
     getActiveCalls,

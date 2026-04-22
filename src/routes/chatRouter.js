@@ -591,6 +591,66 @@ router.post(
     chatController.sendMessage,
 );
 
+// Create call message bubble
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/call:
+ *   post:
+ *     summary: Create call message bubble
+ *     description: Create a message bubble recording a call after it ends
+ *     tags:
+ *       - Chat - Messages
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Conversation ID (UUID)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               callId:
+ *                 type: string
+ *                 description: Call ID (UUID)
+ *               callType:
+ *                 type: string
+ *                 enum: ['voice', 'video']
+ *                 description: Type of call
+ *               callStatus:
+ *                 type: string
+ *                 enum: ['accepted', 'cancelled', 'rejected', 'missed']
+ *                 description: Status of the call
+ *               durationSeconds:
+ *                 type: number
+ *                 description: Call duration in seconds
+ *     responses:
+ *       201:
+ *         description: Call message created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Invalid request parameters
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Conversation not found
+ */
+router.post("/:conversationId/call", authMiddleware, chatController.createCallMessage);
+
 // Mark messages as read
 /**
  * @swagger

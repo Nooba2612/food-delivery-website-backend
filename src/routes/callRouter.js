@@ -36,7 +36,7 @@ const { authMiddleware } = require("@middlewares/authMiddleware");
  *       400:
  *         description: Bad request
  */
-router.post("/", authMiddleware, callController.initiateCall);
+router.post("/", callController.initiateCall);
 
 /**
  * @swagger
@@ -126,6 +126,29 @@ router.post("/:callId/accept", authMiddleware, callController.acceptCall);
  *         description: Call rejected
  */
 router.post("/:callId/reject", authMiddleware, callController.rejectCall);
+
+/**
+ * @swagger
+ * /api/calls/{callId}/cancel:
+ *   post:
+ *     summary: Cancel a call (caller only, before acceptance)
+ *     tags:
+ *       - Calls
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: callId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Call cancelled
+ *       403:
+ *         description: Only call initiator can cancel
+ */
+router.post("/:callId/cancel", authMiddleware, callController.cancelCall);
 
 /**
  * @swagger

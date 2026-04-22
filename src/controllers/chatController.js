@@ -262,6 +262,106 @@ const sendMessage = async (req, res) => {
     }
 };
 
+/**
+ * Create a call message bubble after call ends
+ * POST /api/messages/:conversationId/call
+ */
+const createCallMessage = async (req, res) => {
+    try {
+        const userId = req.user.user_id;
+        const { conversationId } = req.params;
+        const { callId, callType, callStatus, durationSeconds } = req.body;
+        const io = req.app.get("io");
+
+        // Validate required fields
+        if (!callId) {
+            return res.status(400).json({
+                success: false,
+                message: "callId is required",
+            });
+        }
+
+        if (!["voice", "video"].includes(callType)) {
+            return res.status(400).json({
+                success: false,
+                message: "callType must be 'voice' or 'video'",
+            });
+        }
+
+        if (!["accepted", "cancelled", "rejected", "missed"].includes(callStatus)) {
+            return res.status(400).json({
+                success: false,
+                message: "callStatus must be 'accepted', 'cancelled', 'rejected', or 'missed'",
+            });
+        }
+
+        if (durationSeconds === undefined || durationSeconds < 0) {
+            return res.status(400).json({
+                success: false,
+                message: "durationSeconds must be a non-negative number",
+            });
+        }
+
+        // Check if user is member of conversation
+        const ConversationModel = require("@models/ConversationModel");
+        const conversation = await ConversationModel.findById(conversationId);
+        if (!conversation) {
+            return res.status(404).json({
+                success: false,
+                message: "Conversation not found",
+            });
+        }
+
+        // Format call message
+        const icon = callType === "video" ? "📹" : "📞";
+        const callTypeText = callType === "video" ? "Video call" : "Voice call";
+
+        // Format duration
+        const formatDuration = (seconds) => {
+            if (!seconds || seconds <= 0) return "0s";
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            if (mins > 0) {
+                return `${mins}m ${secs}s`;
+            }
+            return `${secs}s`;
+        };
+
+        const duration = formatDuration(durationSeconds);
+        const statusText = callStatus !== "accepted" ? ` • ${callStatus}` : "";
+        const content = `${icon} ${callTypeText} • ${duration}${statusText}`;
+
+        // Create message in database
+        const message = await ChatService.sendMessage(userId, conversationId, {
+            content,
+            type: "call",
+            callData: {
+                callId,
+                callType,
+                callStatus,
+                durationSeconds,
+            },
+        });
+
+        // Broadcast via WebSocket
+        if (io) {
+            const { emitMessageToConversation } = require("@websocket");
+            emitMessageToConversation(io, conversationId, message);
+        }
+
+        res.status(201).json({
+            success: true,
+            data: message,
+        });
+    } catch (error) {
+        console.error("Error creating call message:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Failed to create call message",
+        });
+    }
+};
+
 // Edit message
 const editMessage = async (req, res) => {
     try {
@@ -647,6 +747,7 @@ module.exports = {
     getConversationDetails,
     getMessages,
     sendMessage,
+    createCallMessage,
     editMessage,
     deleteMessage,
     recallMessage,
