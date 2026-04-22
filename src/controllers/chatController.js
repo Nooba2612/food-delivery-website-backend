@@ -1,5 +1,6 @@
 const ChatService = require("@services/chatService");
 const { uploadToS3 } = require("@config/multer");
+const websocket = require("../websocket");
 
 // Get user's conversations
 const getConversations = async (req, res) => {
@@ -79,13 +80,25 @@ const getOrCreateDirectConversation = async (req, res) => {
 const createGroupConversation = async (req, res) => {
     try {
         const userId = req.user.user_id;
-        const { name, participantIds } = req.body;
+        let { name, participantIds } = req.body;
         let avatarPath = null;
 
-        if (!name || !participantIds) {
+        // participantIds might be a JSON string if sent via FormData
+        if (typeof participantIds === "string") {
+            try {
+                participantIds = JSON.parse(participantIds);
+            } catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid participantIds format. Expected a JSON array.",
+                });
+            }
+        }
+
+        if (!name || !participantIds || !Array.isArray(participantIds)) {
             return res.status(400).json({
                 success: false,
-                message: "name and participantIds are required",
+                message: "name and participantIds (array) are required",
             });
         }
 
@@ -102,6 +115,12 @@ const createGroupConversation = async (req, res) => {
         }
 
         const conversation = await ChatService.createGroupConversation(userId, name, participantIds, avatarPath);
+
+        // Emit WebSocket event to all participants
+        const io = req.app.get("io");
+        if (io) {
+            websocket.emitNewConversation(io, participantIds, conversation);
+        }
 
         res.status(201).json({
             success: true,
@@ -585,25 +604,28 @@ const addMemberToGroup = async (req, res) => {
     try {
         const userId = req.user.user_id;
         const { conversationId } = req.params;
-        const { memberId } = req.body;
+        const { memberIds } = req.body;
         const io = req.app.get("io");
 
-        if (!memberId) {
+        if (!memberIds) {
             return res.status(400).json({
                 success: false,
-                message: "memberId is required",
+                message: "memberIds are required",
             });
         }
 
-        const result = await ChatService.addMemberToGroup(userId, conversationId, memberId);
+        const result = await ChatService.addMemberToGroup(userId, conversationId, memberIds);
 
         // Emit real-time member added event
         if (io) {
             const { emitMemberAdded } = require("@websocket");
-            emitMemberAdded(io, conversationId, {
-                memberId,
-                joinedAt: new Date().toISOString(),
-            });
+            const ids = Array.isArray(memberIds) ? memberIds : [memberIds];
+            for (const memberId of ids) {
+                emitMemberAdded(io, conversationId, {
+                    memberId,
+                    joinedAt: new Date().toISOString(),
+                });
+            }
         }
 
         res.status(200).json({
@@ -739,6 +761,117 @@ const deleteConversation = async (req, res) => {
     }
 };
 
+// Disband group
+const disbandGroup = async (req, res) => {
+    try {
+        const userId = req.user.user_id;
+        const { conversationId } = req.params;
+        const io = req.app.get("io");
+
+        const result = await ChatService.disbandGroup(userId, conversationId);
+
+        // Emit real-time group disbanded event
+        if (io) {
+            const { emitGroupDisbanded, emitConversationUpdated } = require("@websocket");
+            emitGroupDisbanded(io, conversationId);
+
+            // Notify all members about the disbanding message in sidebar
+            const members = await require("@models/ConversationParticipantModel").findMembersOfConversation(conversationId);
+            const memberIds = members.map((m) => m.user_id);
+
+            emitConversationUpdated(io, conversationId, memberIds, {
+                lastMessage: {
+                    content: "This group was disbanded",
+                    type: "system",
+                    createdAt: new Date().toISOString(),
+                },
+                lastMessageTimestamp: new Date().toISOString(),
+                unreadCount: 0, // Everyone can see it's disbanded
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Group disbanded successfully",
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+// Update member role
+const updateMemberRole = async (req, res) => {
+    try {
+        const userId = req.user.user_id;
+        const { conversationId } = req.params;
+        const { memberId, role } = req.body;
+        const io = req.app.get("io");
+
+        if (!memberId || !role) {
+            return res.status(400).json({
+                success: false,
+                message: "memberId and role are required",
+            });
+        }
+
+        const result = await ChatService.updateMemberRole(userId, conversationId, memberId, role);
+
+        // Emit real-time role updated event
+        if (io) {
+            const { emitMemberRoleUpdated } = require("@websocket");
+            emitMemberRoleUpdated(io, conversationId, { memberId, role });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: result,
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+// Forward message
+const forwardMessage = async (req, res) => {
+    try {
+        const userId = req.user.user_id;
+        const { conversationId } = req.params;
+        const { originalConversationId, messageId } = req.body;
+        const io = req.app.get("io");
+
+        if (!originalConversationId || !messageId) {
+            return res.status(400).json({
+                success: false,
+                message: "originalConversationId and messageId are required",
+            });
+        }
+
+        const message = await ChatService.forwardMessage(userId, conversationId, originalConversationId, messageId);
+
+        // Emit real-time message to all users in conversation
+        if (io) {
+            const { emitMessageToConversation } = require("@websocket");
+            emitMessageToConversation(io, conversationId, message);
+        }
+
+        res.status(201).json({
+            success: true,
+            data: message,
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
 module.exports = {
     getConversations,
     getConversationsByUserId,
@@ -760,4 +893,7 @@ module.exports = {
     updateConversationSettings,
     updateConversation,
     deleteConversation,
+    disbandGroup,
+    updateMemberRole,
+    forwardMessage,
 };

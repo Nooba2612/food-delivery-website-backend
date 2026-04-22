@@ -717,6 +717,22 @@ const emitConversationUpdated = (io, conversationId, memberIds, conversationData
 };
 
 /**
+ * Emit new conversation (when a group is created)
+ * @param {SocketIO.Server} io - Socket.io server instance
+ * @param {Array} memberIds - Array of member user IDs
+ * @param {object} conversationData - The new conversation data
+ */
+const emitNewConversation = (io, memberIds, conversationData) => {
+    for (const memberId of memberIds) {
+        const userRoom = `user:${memberId}`;
+        io.to(userRoom).emit("new_conversation", {
+            ...conversationData,
+            timestamp: new Date().toISOString(),
+        });
+    }
+};
+
+/**
  * Get online users in conversation
  * @param {string} conversationId - Conversation ID
  * @returns {Array} Array of online user IDs
@@ -834,6 +850,34 @@ const emitICECandidate = (io, recipientId, candidateData) => {
     });
 };
 
+/**
+ * Emit group disbanded
+ * @param {SocketIO.Server} io - Socket.io server instance
+ * @param {string} conversationId - Conversation ID
+ */
+const emitGroupDisbanded = (io, conversationId) => {
+    const roomName = `conversation_${conversationId}`;
+    io.to(roomName).emit("group_disbanded", {
+        conversationId,
+        timestamp: new Date().toISOString(),
+    });
+};
+
+/**
+ * Emit member role updated
+ * @param {SocketIO.Server} io - Socket.io server instance
+ * @param {string} conversationId - Conversation ID
+ * @param {object} data - Role update data { memberId, role }
+ */
+const emitMemberRoleUpdated = (io, conversationId, data) => {
+    const roomName = `conversation_${conversationId}`;
+    io.to(roomName).emit("member_role_updated", {
+        conversationId,
+        ...data,
+        timestamp: new Date().toISOString(),
+    });
+};
+
 module.exports = {
     initializeWebSocket,
     emitMessageToConversation,
@@ -846,6 +890,8 @@ module.exports = {
     emitMemberAdded,
     emitMemberRemoved,
     emitConversationUpdated,
+    emitGroupDisbanded,
+    emitMemberRoleUpdated,
     getOnlineUsersInConversation,
     emitIncomingCall,
     emitCallAccepted,
@@ -854,4 +900,5 @@ module.exports = {
     emitOffer,
     emitAnswer,
     emitICECandidate,
+    emitNewConversation,
 };

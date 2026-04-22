@@ -1045,4 +1045,93 @@ router.post("/:conversationId/members", authMiddleware, chatController.addMember
  */
 router.delete("/:conversationId/members", authMiddleware, chatController.removeMemberFromGroup);
 
+// Disband group
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/disband:
+ *   delete:
+ *     summary: Disband group
+ *     tags:
+ *       - Chat - Group
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Group disbanded
+ */
+router.delete("/:conversationId/disband", authMiddleware, chatController.disbandGroup);
+
+// Update member role
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/members/role:
+ *   put:
+ *     summary: Update member role
+ *     tags:
+ *       - Chat - Group Members
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               memberId:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [admin, member]
+ *     responses:
+ *       200:
+ *         description: Role updated
+ */
+router.put("/:conversationId/members/role", authMiddleware, chatController.updateMemberRole);
+
+// Forward message
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/messages/forward:
+ *   post:
+ *     summary: Forward message
+ *     tags:
+ *       - Chat - Messages
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               originalConversationId:
+ *                 type: string
+ *               messageId:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Message forwarded
+ */
+router.post("/:conversationId/messages/forward", authMiddleware, chatController.forwardMessage);
+
 module.exports = router;

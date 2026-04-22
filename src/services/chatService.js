@@ -51,7 +51,8 @@ class ChatService {
                 role: "member",
             });
 
-            return toCamelCase(newConversation);
+            // Return full conversation details including members
+            return await this.getConversationDetails(newConversation.conversation_id, userId);
         } catch (error) {
             throw error;
         }
@@ -83,14 +84,18 @@ class ChatService {
             }
 
             // Send system message
+            const creator = await userService.getUserById(userId);
+            const creatorName = creator?.fullname || creator?.username || "Someone";
+
             await MessageModel.create({
                 conversation_id: newConversation.conversation_id,
                 sender_id: userId,
-                content: `Created group "${name}"`,
+                content: `${creatorName} created group "${name}"`,
                 type: "system",
             });
 
-            return toCamelCase(newConversation);
+            // Return full conversation details including members for immediate UI update
+            return await this.getConversationDetails(newConversation.conversation_id, userId);
         } catch (error) {
             throw error;
         }
@@ -105,14 +110,37 @@ class ChatService {
             for (const participant of result.items) {
                 const conversation = await ConversationModel.findById(participant.conversation_id);
                 // Skip inactive conversations and conversations deleted by user
-                if (conversation && conversation.is_active !== false && !participant.deleted_at) {
+                if (conversation && !participant.deleted_at) {
+                    // Filter out inactive 1-to-1 conversations, but keep group conversations (even if disbanded)
+                    if (conversation.type === "1to1" && conversation.is_active === false) continue;
+                    const members = await ConversationParticipantModel.findMembersOfConversation(participant.conversation_id);
+                    
                     let convData = {
                         ...conversation,
                         unreadCount: participant.unread_count,
                         isMuted: participant.is_muted,
                         isPinned: participant.is_pinned,
                         lastReadAt: participant.last_read_at,
+                        memberCount: members.length,
                     };
+
+                    // Fetch all participants for the sidebar and management
+                    const participantDetails = [];
+                    for (const member of members) {
+                        const memberUser = await userService.getUserById(member.user_id);
+                        participantDetails.push({
+                            userId: member.user_id,
+                            role: member.role,
+                            fullname: memberUser?.fullname || memberUser?.username || "Unknown",
+                            avatarPath: memberUser?.avatar_path || null,
+                        });
+                    }
+                    convData.participants = participantDetails;
+
+                    // For group conversations, fetch first few member avatars for composite avatar
+                    if (conversation.type === "group") {
+                        convData.memberAvatars = participantDetails.slice(0, 3);
+                    }
 
                     // Get last message details if exists
                     if (conversation.last_message_id) {
@@ -123,7 +151,7 @@ class ChatService {
                                 messageId: lastMessage.message_id,
                                 content: lastMessage.content,
                                 type: lastMessage.type,
-                                senderName: sender?.fullname || sender?.username || "Unknown User",
+                                senderName: sender?.fullname || sender?.username || `User ${lastMessage.sender_id.slice(0, 8)}`,
                                 senderAvatar: sender?.avatar_path || null,
                                 createdAt: lastMessage.created_at,
                             };
@@ -170,8 +198,8 @@ class ChatService {
                 throw new Error("Conversation not found");
             }
 
-            // Check if conversation is active
-            if (conversation.is_active === false) {
+            // Check if conversation is active (Allow inactive groups for read-only access)
+            if (conversation.is_active === false && conversation.type === "1to1") {
                 throw new Error("Conversation not found");
             }
 
@@ -188,9 +216,9 @@ class ChatService {
                 const user = await userService.getUserById(member.user_id);
                 participantDetails.push({
                     userId: member.user_id,
-                    username: user?.username || "Unknown",
+                    username: user?.username || `user_${member.user_id}`,
                     email: user?.email || null,
-                    fullname: user?.fullname || "Unknown User",
+                    fullname: user?.fullname || user?.username || `User ${member.user_id.slice(0, 8)}`,
                     avatarPath: user?.avatar_path || null,
                     role: member.role,
                     joinedAt: member.joined_at,
@@ -252,7 +280,7 @@ class ChatService {
             const sender = await userService.getUserById(userId);
             return toCamelCase({
                 ...message,
-                senderName: sender?.fullname || sender?.username || "Unknown User",
+                senderName: sender?.fullname || sender?.username || `User ${userId.slice(0, 8)}`,
                 senderAvatar: sender?.avatar_path || null,
             });
         } catch (error) {
@@ -265,7 +293,7 @@ class ChatService {
         try {
             // Check conversation exists and is active
             const conversation = await ConversationModel.findById(conversationId);
-            if (!conversation || conversation.is_active === false) {
+            if (!conversation || (conversation.is_active === false && conversation.type === "1to1")) {
                 throw new Error("Conversation not found");
             }
 
@@ -449,8 +477,8 @@ class ChatService {
         }
     }
 
-    // Add member to group
-    static async addMemberToGroup(userId, conversationId, memberId) {
+    // Add members to group
+    static async addMemberToGroup(userId, conversationId, memberIds) {
         try {
             const conversation = await ConversationModel.findById(conversationId);
             if (!conversation) {
@@ -472,23 +500,36 @@ class ChatService {
                 throw new Error("Only admin can add members");
             }
 
-            // Add member
-            await ConversationParticipantModel.create({
-                conversation_id: conversationId,
-                user_id: memberId,
-                role: "member",
-            });
+            // Ensure memberIds is an array
+            const idsToAdd = Array.isArray(memberIds) ? memberIds : [memberIds];
+            const addedMembers = [];
 
-            // Send system message
-            const newMember = await userService.getUserById(memberId);
-            await MessageModel.create({
-                conversation_id: conversationId,
-                sender_id: userId,
-                content: `Added ${newMember.fullname || newMember.username}`,
-                type: "system",
-            });
+            for (const memberId of idsToAdd) {
+                // Check if already a member
+                const alreadyMember = members.find((m) => m.user_id === memberId);
+                if (alreadyMember) continue;
 
-            return { success: true };
+                // Add member
+                await ConversationParticipantModel.create({
+                    conversation_id: conversationId,
+                    user_id: memberId,
+                    role: "member",
+                });
+
+                // Send system message
+                const newMember = await userService.getUserById(memberId);
+                if (newMember) {
+                    await MessageModel.create({
+                        conversation_id: conversationId,
+                        sender_id: userId,
+                        content: `Added ${newMember.fullname || newMember.username}`,
+                        type: "system",
+                    });
+                    addedMembers.push(memberId);
+                }
+            }
+
+            return { success: true, addedMembers };
         } catch (error) {
             throw error;
         }
@@ -630,6 +671,124 @@ class ChatService {
             return toCamelCase({
                 ...recalled,
                 senderName: await userService.getUserById(message.sender_id).then((u) => u?.fullname || "Unknown User"),
+            });
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    // Disband group (only creator/admin can disband)
+    static async disbandGroup(userId, conversationId) {
+        try {
+            const conversation = await ConversationModel.findById(conversationId);
+            if (!conversation || conversation.is_active === false) {
+                throw new Error("Conversation not found");
+            }
+
+            if (conversation.type !== "group") {
+                throw new Error("Not a group conversation");
+            }
+
+            // Check permissions (must be admin/creator)
+            const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+            const userMember = members.find((m) => m.user_id === userId);
+            if (!userMember || userMember.role !== "admin") {
+                throw new Error("Only admin can disband group");
+            }
+
+            // Soft delete conversation for everyone (mark as inactive)
+            await ConversationModel.delete(conversationId);
+
+            // Hide the conversation for the admin who disbanded it
+            await ConversationParticipantModel.markAsDeleted(conversationId, userId);
+
+            const user = await require("./userService").getUserById(userId);
+            const adminName = user?.fullname || user?.username || "Admin";
+            const disbandMessage = await MessageModel.create({
+                conversation_id: conversationId,
+                sender_id: userId,
+                content: `${adminName} disbanded this group`,
+                type: "system",
+            });
+
+            // Update conversation last message for the disbanding event
+            await ConversationModel.updateLastMessage(conversationId, disbandMessage.message_id, new Date().toISOString());
+
+            return { success: true };
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    // Update member role (admin only)
+    static async updateMemberRole(userId, conversationId, memberId, newRole) {
+        try {
+            const conversation = await ConversationModel.findById(conversationId);
+            if (!conversation || conversation.is_active === false) {
+                throw new Error("Conversation not found");
+            }
+
+            // Check if user is admin
+            const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+            const userMember = members.find((m) => m.user_id === userId);
+            if (!userMember || userMember.role !== "admin") {
+                throw new Error("Only admin can change roles");
+            }
+
+            // Validate role
+            if (!["admin", "member"].includes(newRole)) {
+                throw new Error("Invalid role");
+            }
+
+            // Update role
+            const updated = await ConversationParticipantModel.updateSettings(conversationId, memberId, { role: newRole });
+
+            return { success: true, memberId, role: newRole };
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    // Forward message
+    static async forwardMessage(userId, conversationId, originalConversationId, messageId) {
+        try {
+            // Check target conversation
+            const targetConv = await ConversationModel.findById(conversationId);
+            if (!targetConv || targetConv.is_active === false) {
+                throw new Error("Target conversation not found");
+            }
+
+            // Check user is member of target
+            const isMemberOfTarget = await ConversationParticipantModel.isMember(conversationId, userId);
+            if (!isMemberOfTarget) {
+                throw new Error("Not a member of target conversation");
+            }
+
+            // Get original message
+            const originalMessage = await MessageModel.findById(originalConversationId, messageId);
+            if (!originalMessage) {
+                throw new Error("Original message not found");
+            }
+
+            // Create new message as forwarded
+            const newMessage = await MessageModel.create({
+                conversation_id: conversationId,
+                sender_id: userId,
+                content: originalMessage.content,
+                type: "forward",
+                attachments: originalMessage.attachments || [],
+                forwarded_from_id: messageId,
+                forwarded_from_conversation_id: originalConversationId,
+            });
+
+            // Update last message
+            await ConversationModel.updateLastMessage(conversationId, newMessage.message_id, new Date().toISOString());
+
+            const sender = await userService.getUserById(userId);
+            return toCamelCase({
+                ...newMessage,
+                senderName: sender?.fullname || sender?.username || "Unknown User",
+                senderAvatar: sender?.avatar_path || null,
             });
         } catch (error) {
             throw error;

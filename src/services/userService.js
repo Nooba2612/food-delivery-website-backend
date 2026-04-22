@@ -48,8 +48,8 @@ const getProfile = async (userId) => {
 
 const getUserById = async (userId) => {
     try {
-        const user = await userModel.findOne({ where: { user_id: userId } });
-        return user?.dataValues;
+        const user = await userModel.findByPk(userId);
+        return user?.dataValues || user;
     } catch (error) {
         throw error;
     }
