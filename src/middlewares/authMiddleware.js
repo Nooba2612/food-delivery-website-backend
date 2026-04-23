@@ -10,6 +10,9 @@ const authMiddleware = (req, res, next) => {
 
     // ✅ DEBUG LOGS
     console.log("--- AUTH DEBUG ---");
+    console.log("METHOD:", req.method);
+    console.log("PATH:", req.path);
+    console.log("HEADERS:", req.headers);
     console.log("AUTH HEADER:", req.headers.authorization);
 
     if (!token) {
@@ -25,6 +28,7 @@ const authMiddleware = (req, res, next) => {
         console.log("DECODED USER:", decoded);
 
         req.user = {
+            id: decoded.user_id, // Added for consistency
             user_id: decoded.user_id,
             username: decoded.username,
             role: decoded.role
@@ -68,6 +72,7 @@ const authAdminMiddleware = (req, res, next) => {
         }
 
         req.user = {
+            id: decoded.user_id, // Added for consistency
             user_id: decoded.user_id,
             username: decoded.username,
             role: decoded.role

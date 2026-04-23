@@ -39,8 +39,9 @@ const useMiddlewares = (app) => {
     );
     app.use(
         cors({
-            origin: [process.env.CLIENT_URL, process.env.CLIENT_URL2],
+            origin: true, 
             credentials: true,
+            allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
         }),
     );
     app.use(compression());

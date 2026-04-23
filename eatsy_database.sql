@@ -40,6 +40,7 @@ CREATE TABLE Users (
     payment_method_id INT,
 FOREIGN KEY (payment_method_id) REFERENCES PaymentMethods(payment_method_id)
 );
+
 -- Create Customer table
 CREATE TABLE Customers (
     customer_id CHAR(36) PRIMARY KEY,
@@ -52,27 +53,20 @@ CREATE TABLE Customers (
 CREATE TABLE Addresses (
     address_id CHAR(36) PRIMARY KEY,
     user_id CHAR(36) NOT NULL,
-
     street VARCHAR(500) NOT NULL,
-    ward VARCHAR(255),
-    district VARCHAR(255),
+    ward VARCHAR(255) NOT NULL,
+    district VARCHAR(255) NULL,
     city VARCHAR(255) NOT NULL,
-    zip_code VARCHAR(20),
-    country VARCHAR(100) DEFAULT 'Vietnam',
-
     label ENUM('Home', 'Work', 'Other') DEFAULT 'Home',
     is_default BOOLEAN DEFAULT FALSE,
-
     latitude DECIMAL(10,8),
     longitude DECIMAL(11,8),
-
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id),
     INDEX idx_user_default (user_id, is_default)
 );
-
 
 -- Create Categories Table
 CREATE TABLE Categories (
@@ -270,29 +264,6 @@ CREATE TABLE UserVoucher (
 -- SET GLOBAL log_bin_trust_function_creators = 1;
 
 DELIMITER $$
-
--- Trigger for Addresses UUID
-CREATE TRIGGER insert_addresses_id_trigger
-BEFORE INSERT ON Addresses
-FOR EACH ROW
-BEGIN
-    IF NEW.address_id IS NULL OR NEW.address_id = '' THEN
-        SET NEW.address_id = UUID();
-    END IF;
-END$$
-
--- Ensure only one default address per user
-CREATE TRIGGER ensure_one_default_address
-AFTER INSERT ON Addresses
-FOR EACH ROW
-BEGIN
-    IF NEW.is_default = TRUE THEN
-        UPDATE Addresses 
-        SET is_default = FALSE 
-        WHERE user_id = NEW.user_id
-        AND address_id <> NEW.address_id;
-    END IF;
-END$$
 
 -- Auto generate Categories Id
 CREATE TRIGGER insert_categories_id_trigger

@@ -27,15 +27,9 @@ const Address = sequelize.define(
       type: DataTypes.STRING(255),
       allowNull: false,
     },
-    ward: DataTypes.STRING(255),
-    district: DataTypes.STRING(255),
-    zipCode: {
-      type: DataTypes.STRING(20),
-      field: "zip_code",
-    },
-    country: {
-      type: DataTypes.STRING(100),
-      defaultValue: "Vietnam",
+    ward: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
     },
     label: {
       type: DataTypes.ENUM('Home', 'Work', 'Other'),
@@ -46,8 +40,6 @@ const Address = sequelize.define(
       defaultValue: false,
       field: "is_default",
     },
-    latitude: DataTypes.DECIMAL(10, 8),
-    longitude: DataTypes.DECIMAL(11, 8),
   },
   {
     tableName: "Addresses",

@@ -4,6 +4,8 @@ const router = express.Router();
 const userController = require("@controllers/userController");
 const { profileUpload } = require("@config/multer");
 const { authMiddleware } = require("../middlewares/authMiddleware");
+const { body } = require("express-validator");
+const validate = require("../middlewares/validate");
 
 /**
  * @swagger
@@ -93,7 +95,25 @@ router.get("/profile", authMiddleware, userController.getProfile);
  *       400:
  *         description: Invalid input
  */
-router.put("/profile", authMiddleware, profileUpload.single("avatar"), userController.updateProfile);
+router.put(
+    "/profile",
+    authMiddleware,
+    profileUpload.single("avatar"),
+    [
+        body("fullname")
+            .optional()
+            .trim()
+            .isLength({ min: 2, max: 255 })
+            .withMessage("Họ và tên phải từ 2 đến 255 ký tự"),
+        body("username")
+            .optional()
+            .trim()
+            .isLength({ min: 3, max: 50 })
+            .withMessage("Tên đăng nhập phải từ 3 đến 50 ký tự"),
+    ],
+    validate,
+    userController.updateProfile
+);
 
 /**
  * @swagger
@@ -313,32 +333,30 @@ router.put("/addresses/:id/default", authMiddleware, userController.setDefaultAd
  *         description: Order not found
  */
 router.get("/orders/:id", authMiddleware, userController.getOrderDetails);
-+
-+/**
-+ * @swagger
-+ * /api/user/orders/{id}/reorder:
-+ *   post:
-+ *     summary: Reorder items from a past order
-+ *     tags:
-+ *       - User - Orders
-+ *     security:
-+ *       - BearerAuth: []
-+ *     parameters:
-+ *       - in: path
-+ *         name: id
-+ *         required: true
-+ *         schema:
-+ *           type: string
-+ *     responses:
-+ *       200:
-+ *         description: Items added to cart successfully
-+ *       404:
-+ *         description: Order not found
-+ */
-+router.post("/orders/:id/reorder", authMiddleware, userController.reorder);
 
-const { body } = require("express-validator");
-const validate = require("../middlewares/validate");
+/**
+ * @swagger
+ * /api/user/orders/{id}/reorder:
+ *   post:
+ *     summary: Reorder items from a past order
+ *     tags:
+ *       - User - Orders
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Items added to cart successfully
+ *       404:
+ *         description: Order not found
+ */
+router.post("/orders/:id/reorder", authMiddleware, userController.reorder);
+
 
 /**
  * @swagger
