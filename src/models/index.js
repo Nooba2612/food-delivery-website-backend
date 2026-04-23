@@ -64,3 +64,7 @@ cartItemModel.belongsTo(cartModel, { foreignKey: "cart_id" });
 
 cartItemModel.belongsTo(dishModel, { foreignKey: "dishId", as: "dish" });
 dishModel.hasMany(cartItemModel, { foreignKey: "dishId" });
+
+// Category ↔ Dish
+dishModel.belongsTo(categoryModel, { foreignKey: "category_id", as: "category" });
+categoryModel.hasMany(dishModel, { foreignKey: "category_id", as: "dishes" });

@@ -22,7 +22,7 @@ const routes = (app) => {
     app.use("/api/voucher", authMiddleware, voucherRouter);
     app.use("/api/calls", authMiddleware, callRouter);
     app.use("/api/orders", authMiddleware, orderRouter);
-    app.use("/api/admin", authAdminMiddleware, adminRouter);
+    app.use("/api/admin", adminRouter);
 };
 
 module.exports = routes;
