@@ -3,7 +3,8 @@ const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const FacebookStrategy = require("passport-facebook").Strategy;
 const { v4: uuidv4 } = require("uuid");
 
-const { getUser, compareData, hashData } = require("@helpers/validationHelper");
+const { compareHashedData, hashData } = require("@helpers/validationHelper");
+const { getUserByPhoneNumber } = require("@services/userService");
 const { userModel } = require("@models/index");
 
 const usePassportLocalStrategy = (passport) => {
@@ -16,17 +17,17 @@ const usePassportLocalStrategy = (passport) => {
             },
             async (req, phone, password, cb) => {
                 try {
-                    const { countryCode } = req.body.country;
+                    const countryCode = req.body.countryCode || (req.body.country && req.body.country.countryCode);
                     console.log("🚀  phone:", phone);
 
                     // get user from database
-                    const user = await getUser(countryCode, phone);
+                    const user = await getUserByPhoneNumber(countryCode, phone);
                     if (!user) {
                         return cb(null, false, { message: "Incorrect phone number." });
                     }
 
                     // check password
-                    const isValidPassword = await compareData(password, user.password);
+                    const isValidPassword = await compareHashedData(password, user.password);
                     if (!isValidPassword) {
                         return cb(null, false, { message: "Incorrect password." });
                     }
@@ -39,18 +40,6 @@ const usePassportLocalStrategy = (passport) => {
             },
         ),
     );
-
-    passport.serializeUser(function (user, cb) {
-        process.nextTick(function () {
-            cb(null, { id: user.id, username: user.username });
-        });
-    });
-
-    passport.deserializeUser(function (user, cb) {
-        process.nextTick(function () {
-            return cb(null, user);
-        });
-    });
 };
 
 const usePassportGoogleStrategy = (passport) => {
@@ -74,41 +63,32 @@ const usePassportGoogleStrategy = (passport) => {
 
                     // save user in database
                     const [user, created] = await userModel.findOrCreate({
-                        where: { user_id: sub },
+                        where: { userId: sub },
                         defaults: {
-                            user_id: sub,
+                            userId: sub,
                             fullname: name,
                             username: name,
                             email: email,
-                            avatar_path: picture,
-                            type_login: "Google",
+                            avatarPath: picture,
+                            typeLogin: "Google",
                             password: "*",
-                            country_code: "*",
-                            phone_number: uuidv4().substring(0, 20),
+                            countryCode: "*",
+                            phoneNumber: uuidv4().substring(0, 20),
                         },
                     });
 
                     if (created) {
                         console.log("\n\nNew user created: ", user);
-                        return cb(null, profile);
                     } else {
                         console.log("\n\nUser found: ", user);
                     }
-                    return cb(null, profile);
+                    return cb(null, user);
                 } catch (error) {
                     return cb(error);
                 }
             },
         ),
     );
-
-    passport.serializeUser((user, done) => {
-        done(null, user);
-    });
-
-    passport.deserializeUser((user, done) => {
-        done(null, user);
-    });
 };
 
 const usePassportFacebookStrategy = (passport) => {
@@ -135,40 +115,59 @@ const usePassportFacebookStrategy = (passport) => {
 
                     // save user in database
                     const [user, created] = await userModel.findOrCreate({
-                        where: { user_id: id },
+                        where: { userId: id },
                         defaults: {
-                            user_id: id,
+                            userId: id,
                             fullname: name,
                             username: name,
                             email: hashedEmail,
-                            avatar_path: picture.data.url,
-                            type_login: "Facebook",
+                            avatarPath: picture.data.url,
+                            typeLogin: "Facebook",
                             password: "*",
-                            country_code: "*",
-                            phone_number: uuidv4().substring(0, 20),
+                            countryCode: "*",
+                            phoneNumber: uuidv4().substring(0, 20),
                         },
                     });
 
                     if (created) {
                         console.log("\n\nNew user created: ", user);
-                        return cb(null, profile);
                     } else {
                         console.log("\n\nUser found: ", user);
                     }
-                    return cb(null, profile);
+                    return cb(null, user);
                 } catch (error) {
                     return cb(error);
                 }
             },
         ),
     );
+};
 
+const setupPassportSerialization = (passport) => {
     passport.serializeUser((user, done) => {
-        done(null, user);
+        const id = user.userId || user.user_id || user.id || (user._json && user._json.sub);
+        done(null, id);
     });
 
-    passport.deserializeUser((user, done) => {
-        done(null, user);
+    passport.deserializeUser(async (id, done) => {
+        try {
+            // If id is already a full user object (from some previous weird serialization), just fix it
+            if (id && typeof id === 'object' && (id.userId || id.user_id)) {
+                if (!id.user_id) id.user_id = id.userId;
+                return done(null, id);
+            }
+
+            const user = await userModel.findByPk(id);
+            if (user) {
+                const plainUser = user.get({ plain: true });
+                plainUser.user_id = plainUser.userId;
+                done(null, plainUser);
+            } else {
+                done(null, null);
+            }
+        } catch (error) {
+            done(error);
+        }
     });
 };
 
@@ -176,4 +175,5 @@ module.exports = {
     usePassportLocalStrategy,
     usePassportGoogleStrategy,
     usePassportFacebookStrategy,
+    setupPassportSerialization
 };
