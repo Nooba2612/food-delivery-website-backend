@@ -13,7 +13,7 @@ class orderController {
         }
 
         const userId = req.user.user_id;
-        const { address_id, note } = req.body;
+        const { address_id, note, voucher_code } = req.body;
 
         if (!address_id) {
             return next(new AppError("Vui lòng cung cấp địa chỉ giao hàng", 400));
@@ -22,6 +22,7 @@ class orderController {
         const order = await orderService.createOrderFromCart(userId, {
             address_id,
             note,
+            voucher_code,
             payment_method: "COD"
         });
 

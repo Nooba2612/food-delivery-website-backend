@@ -58,13 +58,14 @@ const OrderService = {
     // POST /api/orders
     createOrderFromCart: async (userId, orderData) => {
         const { sequelize } = require("@config/sequelize");
-        const { addressModel, dishModel } = require("@models");
+        const { addressModel, dishModel, voucherModel, accountVoucher } = require("@models");
         const AppError = require("../utils/AppError");
+        const { Op } = require("sequelize");
         
         const t = await sequelize.transaction();
 
         try {
-            const { address_id, payment_method, note } = orderData;
+            const { address_id, payment_method, note, voucher_code } = orderData;
 
             // 1. Fetch Cart and Items
             const cart = await cartModel.findOne({ 
@@ -122,6 +123,49 @@ const OrderService = {
             const brands = [...new Set(validatedItems.map(i => i.brand))];
             const orderBrand = brands.length === 1 ? brands[0] : "Mixed Brands";
 
+            // 4.5. Apply Voucher if provided
+            let discountAmount = 0;
+            let appliedVoucher = null;
+            
+            if (voucher_code) {
+                const voucher = await voucherModel.findOne({
+                    where: { 
+                        code: voucher_code,
+                        valid_from: { [Op.lte]: new Date() },
+                        valid_to: { [Op.gte]: new Date() },
+                        number_of_uses: { [Op.gt]: 0 }
+                    },
+                    transaction: t
+                });
+
+                if (!voucher) {
+                    throw new AppError("Mã giảm giá không hợp lệ hoặc đã hết hạn", 400);
+                }
+
+                // Check min purchase requirement
+                if (totalAmount < voucher.min_purchase) {
+                    throw new AppError(`Đơn hàng tối thiểu ${voucher.min_purchase.toLocaleString('vi-VN')}₫ để áp dụng mã này`, 400);
+                }
+
+                // Calculate discount
+                if (voucher.discount_type === 'Percentage') {
+                    discountAmount = totalAmount * voucher.discount_value;
+                } else {
+                    discountAmount = Math.min(voucher.discount_value, totalAmount);
+                }
+
+                // Decrease voucher uses
+                await voucher.decrement('number_of_uses', { by: 1, transaction: t });
+                
+                appliedVoucher = {
+                    voucher_id: voucher.voucher_id,
+                    code: voucher.code,
+                    discount_amount: discountAmount
+                };
+            }
+
+            const finalAmount = Math.max(0, totalAmount - discountAmount);
+
             // 5. Compute estimated delivery time
             const BASE_DELIVERY_MINUTES = 15;
             const maxPrepTime = Math.max(...validatedItems.map(i => i.preparation_time), 0);
@@ -142,8 +186,10 @@ const OrderService = {
                     address_id,
                     payment_method: payment_method || "COD",
                     payment_status: "unpaid",
-                    total_amount: totalAmount,
+                    total_amount: finalAmount,
                     delivery_address: addressSnapshot,
+                    voucher_code: appliedVoucher ? appliedVoucher.code : null,
+                    discount_amount: discountAmount
                 },
                 { transaction: t },
             );
@@ -180,7 +226,10 @@ const OrderService = {
             
             return {
                 order_id: orderId,
-                total_amount: totalAmount,
+                total_amount: finalAmount,
+                original_amount: totalAmount,
+                discount_amount: discountAmount,
+                voucher_applied: appliedVoucher ? appliedVoucher.code : null,
                 status: "pending",
                 payment_method: "COD"
             };

@@ -71,6 +71,17 @@ const orderModel = sequelize.define(
             allowNull: false,
             defaultValue: "unpaid",
         },
+        voucher_code: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            comment: "Applied voucher code for this order",
+        },
+        discount_amount: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: false,
+            defaultValue: 0,
+            comment: "Discount amount from voucher",
+        },
         order_date: {
             type: DataTypes.DATE,
             defaultValue: DataTypes.NOW,
