@@ -493,11 +493,11 @@ VALUES
 
 INSERT INTO Vouchers (code, description, discount_type, discount_value, valid_from, valid_to, min_purchase, number_of_uses)
 VALUES
-('EATSYWELCOME', 'Giảm 10% cho hóa đơn', 'Percentage', 0.1, '2025-01-01 00:00:00', '2025-12-31 23:59:59', 0, 999),
-('EATSY50', 'Giảm 50.000đ cho đơn hàng từ 500.000đ', 'Amount', 50000, '2025-01-01 00:00:00', '2025-06-30 23:59:59', 500000, 100),
-('WELCOME20', 'Chào mừng khách hàng mới, giảm 20%', 'Percentage', 0.2, '2025-01-01 00:00:00', '2025-03-31 23:59:59', 0, 100),
-('BIGSALE100', 'Giảm 100.000đ cho đơn hàng từ 1.000.000đ', 'Amount', 100000, '2025-01-01 00:00:00', '2025-08-31 23:59:59', 1000000, 100),
-('FREESHIP', 'Miễn phí vận chuyển cho đơn hàng từ 300.000đ', 'Amount', 30000, '2025-01-01 00:00:00', '2025-12-31 23:59:59', 300000, 100);
+('EATSYWELCOME', 'Giảm 10% cho hóa đơn', 'Percentage', 0.1, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 0, 999),
+('EATSY50', 'Giảm 50.000đ cho đơn hàng từ 500.000đ', 'Amount', 50000, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 500000, 100),
+('WELCOME20', 'Chào mừng khách hàng mới, giảm 20%', 'Percentage', 0.2, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 0, 100),
+('BIGSALE100', 'Giảm 100.000đ cho đơn hàng từ 1.000.000đ', 'Amount', 100000, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 1000000, 100),
+('FREESHIP', 'Miễn phí vận chuyển cho đơn hàng từ 300.000đ', 'Amount', 30000, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 300000, 100);
 
 -- Sample Users for Reviews
 INSERT INTO Users (fullname, username, email, phone_number, country_code, password, type_login, role)
