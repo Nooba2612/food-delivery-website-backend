@@ -8,7 +8,10 @@ const getUserByPhoneNumber = async (countryCode, phoneNumber) => {
         const user = await userModel.findOne({
             where: { countryCode: countryCode, phoneNumber: phoneNumber },
         });
-        return user;
+        if (!user) return null;
+        const plainUser = user.get({ plain: true });
+        plainUser.user_id = plainUser.userId;
+        return plainUser;
     } catch (error) {
         throw error;
     }
@@ -17,7 +20,10 @@ const getUserByPhoneNumber = async (countryCode, phoneNumber) => {
 const getUserByEmail = async (email) => {
     try {
         const user = await userModel.findOne({ where: { email: email } });
-        return user;
+        if (!user) return null;
+        const plainUser = user.get({ plain: true });
+        plainUser.user_id = plainUser.userId;
+        return plainUser;
     } catch (error) {
         throw error;
     }
@@ -49,7 +55,11 @@ const getProfile = async (userId) => {
 const getUserById = async (userId) => {
     try {
         const user = await userModel.findOne({ where: { userId: userId } });
-        return user?.dataValues;
+        if (!user) return null;
+        
+        const plainUser = user.get({ plain: true });
+        plainUser.user_id = plainUser.userId; // Ensure user_id is present
+        return plainUser;
     } catch (error) {
         throw error;
     }

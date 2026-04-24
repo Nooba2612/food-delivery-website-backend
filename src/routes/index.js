@@ -10,6 +10,7 @@ const voucherRouter = require("./voucherRouter");
 const callRouter = require("./callRouter");
 const orderRouter = require("./orderRouter");
 const chatbotRouter = require("./chatbotRouter");
+const supportChatRouter = require("./supportChatRouter");
 const { authAdminMiddleware, authMiddleware } = require("@middlewares/authMiddleware");
 
 const routes = (app) => {
@@ -26,6 +27,9 @@ const routes = (app) => {
     app.use("/api/admin", authAdminMiddleware, adminRouter);
     // AI Chatbot — RAG pipeline (public, không yêu cầu đăng nhập)
     app.use("/api/chat", chatbotRouter);
+    // Support Chat — Chăm sóc khách hàng (Customer ⇔ Admin)
+    app.use("/api/support", authMiddleware, supportChatRouter);
+
 };
 
 module.exports = routes;

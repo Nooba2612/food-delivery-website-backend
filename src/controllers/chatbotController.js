@@ -36,7 +36,7 @@ const qdrant = new QdrantClient({
 // ─── Hằng số ─────────────────────────────────────────────────
 const COLLECTION_NAME = "eatsy_dishes";
 const EMBEDDING_MODEL = "gemini-embedding-001";  // 3072 dims — Đang sử dụng ổn định
-const CHAT_MODEL = "gemini-2.5-flash";     // Gemini 2.0 Flash-Lite (Model chuẩn)
+const CHAT_MODEL = "gemini-2.5-flash-lite";     // Gemini 2.0 Flash-Lite (Model chuẩn)
 const BACKEND_URL = "http://localhost:5678";    // URL server để lấy ảnh
 const TOP_K_RESULTS = 3;                         // gemini-embedding-001 = 3072 dims
 const SLIDING_WINDOW_SIZE = 5;

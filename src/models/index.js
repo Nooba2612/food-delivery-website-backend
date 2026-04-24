@@ -15,6 +15,8 @@ const otpModel = require("@models/otpModel");
 const reviewModel = require("@models/reviewModel");
 const accountVoucher = require("@models/userVoucher");
 const addressModel = require("@models/addressModel");
+const supportConversationModel = require("@models/supportConversationModel");
+const supportMessageModel = require("@models/supportMessageModel");
 
 sequelize
   .sync()
@@ -39,6 +41,8 @@ module.exports = {
   voucherModel,
   accountVoucher,
   addressModel,
+  supportConversationModel,
+  supportMessageModel,
 };
 
 // Define associations after all models loaded
@@ -65,6 +69,14 @@ cartItemModel.belongsTo(cartModel, { foreignKey: "cart_id" });
 cartItemModel.belongsTo(dishModel, { foreignKey: "dishId", as: "dish" });
 dishModel.hasMany(cartItemModel, { foreignKey: "dishId" });
 
-// Category & Dish associations
+// Category ↔ Dish
+dishModel.belongsTo(categoryModel, { foreignKey: "category_id", as: "category" });
 categoryModel.hasMany(dishModel, { foreignKey: "category_id", as: "dishes" });
-dishModel.belongsTo(categoryModel, { foreignKey: "category_id", as: "Category" });
+
+// Support Chat associations
+// Một cuộc hội thoại có nhiều tin nhắn
+supportConversationModel.hasMany(supportMessageModel, { foreignKey: "conversation_id", as: "messages" });
+supportMessageModel.belongsTo(supportConversationModel, { foreignKey: "conversation_id", as: "conversation" });
+// Cuộc hội thoại thuộc về một khách hàng (liên kết tới Users)
+supportConversationModel.belongsTo(userModel, { foreignKey: "customer_id", as: "customer" });
+

@@ -226,10 +226,18 @@ class authController {
         });
       }
 
-      const userId = req.user.user_id;
+      const userId = req.user.user_id || req.user.userId || req.user.id;
 
       // ✅ DEBUG LOGS
+      console.log("LOGIN STATUS req.user:", JSON.stringify(req.user, null, 2));
       console.log("LOGIN STATUS userId:", userId);
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized - Invalid user ID",
+        });
+      }
 
       const user = await getUserById(userId);
       const { memorizedLogin } = req.cookies;

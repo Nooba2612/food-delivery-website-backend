@@ -205,6 +205,42 @@ const initializeWebSocket = (server) => {
             });
         });
 
+        // ===== SUPPORT CHAT HANDLERS (Customer ↔ Admin) =====
+        // Dùng prefix 'support:' để tách biệt khỏi hệ thống chat tổng quát
+
+        // Customer / Admin tham gia room của cuộc hội thoại hỗ trợ
+        socket.on("support:join", (conversationId) => {
+            const roomName = `support_conv_${conversationId}`;
+            socket.join(roomName);
+            console.log(`💬 [Support] User ${userId} joined support room: ${roomName}`);
+        });
+
+        // Rời khỏi room hỗ trợ
+        socket.on("support:leave", (conversationId) => {
+            const roomName = `support_conv_${conversationId}`;
+            socket.leave(roomName);
+            console.log(`💬 [Support] User ${userId} left support room: ${roomName}`);
+        });
+
+        // Trạng thái đang gõ phín (Typing indicator)
+        socket.on("support:typing", ({ conversationId }) => {
+            const roomName = `support_conv_${conversationId}`;
+            // emit tới tất cả thành viên trong room TỪ TRỪ socket hiện tại
+            socket.to(roomName).emit("support:display_typing", {
+                userId,
+                conversationId,
+            });
+        });
+
+        // Dừng gõ phín
+        socket.on("support:stop_typing", ({ conversationId }) => {
+            const roomName = `support_conv_${conversationId}`;
+            socket.to(roomName).emit("support:hide_typing", {
+                userId,
+                conversationId,
+            });
+        });
+
         // Disconnect handler
         socket.on("disconnect", () => {
             console.log(`❌ User ${userId} disconnected: ${socket.id}`);
