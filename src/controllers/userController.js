@@ -135,6 +135,9 @@ class UserController {
         try {
             const userId = req.user.user_id;
             const addresses = await getAddressesByUserId(userId);
+            // CRITICAL: Prevent browser from caching (avoids stale 304 responses)
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.set('Pragma', 'no-cache');
             res.json({
                 success: true,
                 data: addresses,
@@ -202,17 +205,20 @@ class UserController {
         }
     };
 
-    // GET /addresses/:id/default - Set default address
+    // PUT /addresses/:id/default - Set default address
     setDefaultAddress = async (req, res) => {
         try {
             const userId = req.user.user_id;
             const { id } = req.params;
+            console.log(`📌 [Controller] setDefaultAddress called: userId=${userId}, addressId=${id}`);
             await setDefaultAddress(userId, id);
+            console.log(`✅ [Controller] setDefaultAddress SUCCESS for ${id}`);
             res.json({
                 success: true,
                 message: "Default address updated successfully",
             });
         } catch (error) {
+            console.error(`❌ [Controller] setDefaultAddress FAILED:`, error.message);
             res.status(400).json({
                 success: false,
                 message: error.message || "Failed to set default address",

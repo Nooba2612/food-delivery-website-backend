@@ -12,6 +12,7 @@ const {
     usePassportLocalStrategy,
     usePassportGoogleStrategy,
     usePassportFacebookStrategy,
+    setupPassportSerialization
 } = require("@config/passport");
 
 
@@ -52,6 +53,7 @@ const useMiddlewares = (app) => {
     usePassportLocalStrategy(passport);
     usePassportGoogleStrategy(passport);
     usePassportFacebookStrategy(passport);
+    setupPassportSerialization(passport);
 };
 
 module.exports = useMiddlewares;

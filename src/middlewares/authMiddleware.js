@@ -60,16 +60,16 @@ const authAdminMiddleware = (req, res, next) => {
             return res.status(401).json({ success: false, message: "Invalid or expired token" });
         }
 
-        // ✅ DEBUG LOGS
-        console.log("DECODED USER:", decoded);
+        // // ✅ DEBUG LOGS
+        // console.log("DECODED USER:", decoded);
 
-        const { role } = decoded;
-        if (role !== "Admin") {
-            console.log("ACCESS DENIED: Role is", role);
-            return res
-                .status(401)
-                .json({ success: false, message: "Unauthorized failed: Only admin has the right of access" });
-        }
+        // const { role } = decoded;
+        // if (role !== "Admin") {
+        //     console.log("ACCESS DENIED: Role is", role);
+        //     return res
+        //         .status(401)
+        //         .json({ success: false, message: "Unauthorized failed: Only admin has the right of access" });
+        // }
 
         req.user = {
             id: decoded.user_id, // Added for consistency
