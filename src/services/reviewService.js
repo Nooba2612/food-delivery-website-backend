@@ -12,7 +12,7 @@ const reviewService = {
                     {
                         model: userModel,
                         as: "user",
-                        attributes: ["userId", "fullname", "avatarPath"],
+                        attributes: ["userId", "fullname", "username", "avatarPath"],
                     },
                 ],
                 order: [["created_at", "DESC"]],
@@ -24,7 +24,8 @@ const reviewService = {
                     review_id: plainReview.review_id,
                     user: {
                         user_id: plainReview.user?.userId,
-                        fullname: plainReview.user?.fullname || "Người dùng",
+                        fullname: plainReview.user?.fullname,
+                        username: plainReview.user?.username,
                         avatar: plainReview.user?.avatarPath,
                     },
                     points: Number(plainReview.points),
@@ -99,7 +100,7 @@ const reviewService = {
                     {
                         model: userModel,
                         as: "user",
-                        attributes: ["userId", "fullname", "avatarPath"],
+                        attributes: ["userId", "fullname", "username", "avatarPath"],
                     },
                 ],
             });
@@ -109,7 +110,8 @@ const reviewService = {
                 review_id: plainReview.review_id,
                 user: {
                     user_id: plainReview.user?.userId,
-                    fullname: plainReview.user?.fullname || "Người dùng",
+                    fullname: plainReview.user?.fullname,
+                    username: plainReview.user?.username,
                     avatar: plainReview.user?.avatarPath,
                 },
                 points: Number(plainReview.points),
@@ -174,7 +176,7 @@ const reviewService = {
                     {
                         model: userModel,
                         as: "user",
-                        attributes: ["userId", "fullname", "avatarPath"],
+                        attributes: ["userId", "fullname", "username", "avatarPath"],
                     },
                 ],
             });
@@ -184,7 +186,8 @@ const reviewService = {
                 review_id: plainReview.review_id,
                 user: {
                     user_id: plainReview.user?.userId,
-                    fullname: plainReview.user?.fullname || "Người dùng",
+                    fullname: plainReview.user?.fullname,
+                    username: plainReview.user?.username,
                     avatar: plainReview.user?.avatarPath,
                 },
                 points: Number(plainReview.points),
