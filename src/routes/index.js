@@ -9,6 +9,7 @@ const cartRouter = require("./cartRouter");
 const voucherRouter = require("./voucherRouter");
 const callRouter = require("./callRouter");
 const orderRouter = require("./orderRouter");
+const reviewRouter = require("./reviewRouter");
 const { authAdminMiddleware, authMiddleware } = require("@middlewares/authMiddleware");
 
 const routes = (app) => {
@@ -23,6 +24,7 @@ const routes = (app) => {
     app.use("/api/calls", authMiddleware, callRouter);
     app.use("/api/orders", authMiddleware, orderRouter);
     app.use("/api/admin", adminRouter);
+    app.use("/api", reviewRouter);
 };
 
 module.exports = routes;
