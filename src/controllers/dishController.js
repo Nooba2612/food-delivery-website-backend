@@ -32,6 +32,13 @@ class dishController {
 
       const dishes = await dishModel.findAll({
         where: searchCondition,
+        include: [
+          {
+            model: categoryModel,
+            as: 'category',
+            attributes: ['category_id', 'name']
+          }
+        ],
         order: [["price", sort || "ASC"]],
       });
 
