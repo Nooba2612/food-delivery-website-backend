@@ -3,7 +3,7 @@ DROP DATABASE IF EXISTS eatsy_food;
 CREATE DATABASE eatsy_food;
 SHOW DATABASES;
 USE eatsy_food;
-
+SELECT VERSION();
 -- User authorization
 -- CREATE USER 'eatsy_user'@'localhost' IDENTIFIED BY '123';
 -- GRANT ALL PRIVILEGES ON eatsy_food.* TO 'eatsy_user'@'localhost';

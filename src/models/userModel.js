@@ -63,10 +63,6 @@ const User = sequelize.define(
       defaultValue: true,
       field: "is_online",
     },
-    position: {
-      type: DataTypes.STRING(100),
-      allowNull: true,
-    },
   },
   {
     tableName: "Users",

@@ -24,10 +24,8 @@ const routes = (app) => {
     app.use("/api/voucher", authMiddleware, voucherRouter);
     app.use("/api/calls", authMiddleware, callRouter);
     app.use("/api/orders", authMiddleware, orderRouter);
-    app.use("/api/admin", authAdminMiddleware, adminRouter);
-    // AI Chatbot — RAG pipeline (public, không yêu cầu đăng nhập)
+    app.use("/api/admin",  adminRouter);
     app.use("/api/chat", chatbotRouter);
-    // Support Chat — Chăm sóc khách hàng (Customer ⇔ Admin)
     app.use("/api/support", authMiddleware, supportChatRouter);
 
 };

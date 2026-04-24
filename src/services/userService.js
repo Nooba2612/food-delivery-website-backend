@@ -3,9 +3,31 @@ const { Op } = require("sequelize");
 
 const { addressModel, userModel } = require("@models");
 
+// ── Safe attribute whitelist — ONLY columns that exist in the DB ──
+const USER_SAFE_ATTRIBUTES = [
+    "userId",
+    "fullname",
+    "gender",
+    "dateOfBirth",
+    "password",
+    "username",
+    "typeLogin",
+    "email",
+    "phoneNumber",
+    "countryCode",
+    "role",
+    "avatarPath",
+    "paymentMethodId",
+    "lastLogin",
+    "isOnline",
+    "createdAt",
+    "updatedAt",
+];
+
 const getUserByPhoneNumber = async (countryCode, phoneNumber) => {
     try {
         const user = await userModel.findOne({
+            attributes: USER_SAFE_ATTRIBUTES,
             where: { countryCode: countryCode, phoneNumber: phoneNumber },
         });
         if (!user) return null;
@@ -13,18 +35,23 @@ const getUserByPhoneNumber = async (countryCode, phoneNumber) => {
         plainUser.user_id = plainUser.userId;
         return plainUser;
     } catch (error) {
+        console.error("📌 [getUserByPhoneNumber] DB error:", error.message);
         throw error;
     }
 };
 
 const getUserByEmail = async (email) => {
     try {
-        const user = await userModel.findOne({ where: { email: email } });
+        const user = await userModel.findOne({
+            attributes: USER_SAFE_ATTRIBUTES,
+            where: { email: email },
+        });
         if (!user) return null;
         const plainUser = user.get({ plain: true });
         plainUser.user_id = plainUser.userId;
         return plainUser;
     } catch (error) {
+        console.error("📌 [getUserByEmail] DB error:", error.message);
         throw error;
     }
 };
