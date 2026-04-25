@@ -1,6 +1,31 @@
 const voucherController = require("@controllers/voucherController");
 const express = require("express");
+const { authMiddleware } = require("@middlewares/authMiddleware");
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/voucher:
+ *   get:
+ *     summary: Get all active vouchers (Public)
+ *     tags:
+ *       - Voucher
+ *     responses:
+ *       200:
+ *         description: List of active vouchers
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Voucher'
+ */
+router.get("/", voucherController.getAllVouchers); // Public - no auth needed
 
 /**
  * @swagger
@@ -42,6 +67,6 @@ const router = express.Router();
  *       401:
  *         description: Unauthorized
  */
-router.post("/check-voucher", voucherController.checkVoucher);
+router.post("/check-voucher", authMiddleware, voucherController.checkVoucher); // Protected
 
 module.exports = router;

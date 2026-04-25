@@ -73,10 +73,32 @@ dishModel.hasMany(cartItemModel, { foreignKey: "dishId" });
 dishModel.belongsTo(categoryModel, { foreignKey: "category_id", as: "category" });
 categoryModel.hasMany(dishModel, { foreignKey: "category_id", as: "dishes" });
 
+// Review associations
+reviewModel.belongsTo(userModel, { 
+    foreignKey: "user_id", 
+    targetKey: "userId",
+    as: "user" 
+});
+userModel.hasMany(reviewModel, { 
+    foreignKey: "user_id", 
+    sourceKey: "userId",
+    as: "reviews" 
+});
+
+reviewModel.belongsTo(dishModel, { 
+    foreignKey: "dish_id", 
+    targetKey: "dish_id",
+    as: "dish" 
+});
+dishModel.hasMany(reviewModel, { 
+    foreignKey: "dish_id", 
+    sourceKey: "dish_id",
+    as: "reviews" 
+});
+
 // Support Chat associations
 // Một cuộc hội thoại có nhiều tin nhắn
 supportConversationModel.hasMany(supportMessageModel, { foreignKey: "conversation_id", as: "messages" });
 supportMessageModel.belongsTo(supportConversationModel, { foreignKey: "conversation_id", as: "conversation" });
 // Cuộc hội thoại thuộc về một khách hàng (liên kết tới Users)
 supportConversationModel.belongsTo(userModel, { foreignKey: "customer_id", as: "customer" });
-

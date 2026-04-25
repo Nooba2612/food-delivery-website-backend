@@ -1,4 +1,5 @@
 const { getVoucher } = require("@services/voucherService");
+const voucherModel = require("@models/voucherModel");
 
 class voucherController {
     async checkVoucher(req, res) {
@@ -29,6 +30,31 @@ class voucherController {
             voucher: voucher.dataValues,
             status: "APPLIED",
         });
+    }
+
+    async getAllVouchers(req, res) {
+        try {
+            const currentDateTime = new Date();
+            const vouchers = await voucherModel.findAll({
+                where: {
+                    valid_to: {
+                        [require('sequelize').Op.gte]: currentDateTime
+                    }
+                },
+                order: [['created_at', 'DESC']]
+            });
+
+            res.status(200).json({
+                success: true,
+                data: vouchers,
+            });
+        } catch (error) {
+            console.error("Get vouchers error:", error);
+            res.status(500).json({
+                success: false,
+                message: "Lỗi khi lấy danh sách voucher"
+            });
+        }
     }
 }
 

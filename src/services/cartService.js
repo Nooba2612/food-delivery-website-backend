@@ -33,12 +33,20 @@ const getCartItemsByUserId = async (user_id) => {
         });
 
         const enrichedItems = cartItems.map((item) => {
+            const plainItem = item.get({ plain: true });
             const dish = item.dish;
             const is_available = dish && dish.available && dish.status === "active";
             const has_stock = dish && dish.stock >= item.quantity;
 
+            console.log("🔍 Cart Item Debug:", {
+                cart_item_id: plainItem.cart_item_id,
+                price_snapshot: plainItem.price_snapshot,
+                quantity: plainItem.quantity,
+                dish_name: dish?.name
+            });
+
             return {
-                ...item.get({ plain: true }),
+                ...plainItem,
                 is_available,
                 has_stock,
                 warning: !is_available ? "Sản phẩm hiện không khả dụng" : !has_stock ? "Số lượng trong kho không đủ" : null,
@@ -49,7 +57,9 @@ const getCartItemsByUserId = async (user_id) => {
             (acc, item) => {
                 if (item.is_available && item.has_stock) {
                     acc.totalQuantity += item.quantity;
-                    acc.totalAmount += Number(item.priceSnapshot) * item.quantity;
+                    // Support both priceSnapshot and price_snapshot
+                    const itemPrice = item.priceSnapshot || item.price_snapshot || 0;
+                    acc.totalAmount += Number(itemPrice) * item.quantity;
                 }
                 return acc;
             },
@@ -125,9 +135,9 @@ const addCartItem = async (userId, dishId, quantity) => {
                 {
                     cart_item_id: uuidv4(),
                     cart_id: cart.cart_id,
-                    dishId: dishId, // Correct property name
+                    dishId: dishId,
                     quantity,
-                    priceSnapshot: dish.price, // Correct property name
+                    priceSnapshot: dish.price,  // Use attribute name, not field name
                 },
                 { transaction },
             );
