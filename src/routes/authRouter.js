@@ -52,7 +52,11 @@ router.get(
     (req, res, next) => {
         const { memorizedLogin } = req.query;
         res.cookie("memorizedLogin", memorizedLogin);
-        res.status(200);
+
+        // If request is from Axios (AJAX), don't redirect to and trigger CORS error
+        if (req.xhr || (req.headers.accept && req.headers.accept.includes("application/json"))) {
+            return res.json({ success: true, message: "Cookie set" });
+        }
         next();
     },
     passport.authenticate("google", {
@@ -100,7 +104,11 @@ router.get(
     (req, res, next) => {
         const { memorizedLogin } = req.query;
         res.cookie("memorizedLogin", memorizedLogin);
-        res.status(200);
+
+        // If request is from Axios (AJAX), don't redirect and trigger CORS error
+        if (req.xhr || (req.headers.accept && req.headers.accept.includes("application/json"))) {
+            return res.json({ success: true, message: "Cookie set" });
+        }
         next();
     },
     passport.authenticate("facebook", {

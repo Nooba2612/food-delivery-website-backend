@@ -3,22 +3,55 @@ const { Op } = require("sequelize");
 
 const { addressModel, userModel } = require("@models");
 
+// ── Safe attribute whitelist — ONLY columns that exist in the DB ──
+const USER_SAFE_ATTRIBUTES = [
+    "userId",
+    "fullname",
+    "gender",
+    "dateOfBirth",
+    "password",
+    "username",
+    "typeLogin",
+    "email",
+    "phoneNumber",
+    "countryCode",
+    "role",
+    "avatarPath",
+    "paymentMethodId",
+    "lastLogin",
+    "isOnline",
+    "createdAt",
+    "updatedAt",
+];
+
 const getUserByPhoneNumber = async (countryCode, phoneNumber) => {
     try {
         const user = await userModel.findOne({
+            attributes: USER_SAFE_ATTRIBUTES,
             where: { countryCode: countryCode, phoneNumber: phoneNumber },
         });
-        return user;
+        if (!user) return null;
+        const plainUser = user.get({ plain: true });
+        plainUser.user_id = plainUser.userId;
+        return plainUser;
     } catch (error) {
+        console.error("📌 [getUserByPhoneNumber] DB error:", error.message);
         throw error;
     }
 };
 
 const getUserByEmail = async (email) => {
     try {
-        const user = await userModel.findOne({ where: { email: email } });
-        return user;
+        const user = await userModel.findOne({
+            attributes: USER_SAFE_ATTRIBUTES,
+            where: { email: email },
+        });
+        if (!user) return null;
+        const plainUser = user.get({ plain: true });
+        plainUser.user_id = plainUser.userId;
+        return plainUser;
     } catch (error) {
+        console.error("📌 [getUserByEmail] DB error:", error.message);
         throw error;
     }
 };
@@ -57,7 +90,11 @@ const getProfile = async (userId) => {
 const getUserById = async (userId) => {
     try {
         const user = await userModel.findOne({ where: { userId: userId } });
-        return user?.dataValues;
+        if (!user) return null;
+        
+        const plainUser = user.get({ plain: true });
+        plainUser.user_id = plainUser.userId; // Ensure user_id is present
+        return plainUser;
     } catch (error) {
         throw error;
     }
@@ -78,31 +115,52 @@ const createUser = async (username, type_login, country_code, phone_number, pass
     }
 };
 
-const updateProfile = async (userId, updateData, avatarFile = null) => {
+const updateProfile = async (userId, updateData) => {
     try {
-        const allowedFields = ["fullname", "phoneNumber", "gender", "dateOfBirth", "paymentMethodId", "avatarPath", "email"];
-        const updateObj = {};
-
-        for (const field of allowedFields) {
-            if (updateData[field] !== undefined) {
-                updateObj[field] = updateData[field];
-            }
-        }
-
-        // Handle legacy avatar file upload (local storage)
-        if (avatarFile && !updateData.avatarPath) {
-            updateObj.avatarPath = `/uploads/avatars/${avatarFile.filename}`;
-        }
-
-        const [updatedCount] = await userModel.update(updateObj, {
-            where: { userId: userId },
-            returning: true,
-        });
-
-        if (updatedCount === 0) {
+        const user = await userModel.findByPk(userId);
+        if (!user) {
             throw new Error("User not found");
         }
 
+        // 1. Define allowed fields (Strict)
+        const allowedFields = ["fullname", "username", "gender", "dateOfBirth", "avatarPath"];
+        const updateObj = {};
+
+        // 2. Filter, Normalize (trim + collapse spaces)
+        for (const field of allowedFields) {
+            if (updateData[field] !== undefined) {
+                let val = updateData[field];
+                if (typeof val === "string") {
+                    val = val.trim().replace(/\s+/g, " ");
+                }
+                if (val !== "" || field === "avatarPath") {
+                    updateObj[field] = val;
+                }
+            }
+        }
+
+        // 3. Validation
+        if (updateObj.fullname && (updateObj.fullname.length < 2 || updateObj.fullname.length > 255)) {
+            throw new Error("Full name must be between 2 and 255 characters");
+        }
+        if (updateObj.username && (updateObj.username.length < 3 || updateObj.username.length > 50)) {
+            throw new Error("Username must be between 3 and 50 characters");
+        }
+
+        // 4. Username Uniqueness Check
+        if (updateObj.username && updateObj.username !== user.username) {
+            const existingUser = await userModel.findOne({
+                where: { username: updateObj.username },
+            });
+            if (existingUser) {
+                throw new Error("Username already taken");
+            }
+        }
+
+        // 5. Update using best practice
+        await user.update(updateObj);
+
+        // 6. Return fresh data
         return await getProfile(userId);
     } catch (error) {
         throw error;

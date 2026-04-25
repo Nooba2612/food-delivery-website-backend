@@ -3,7 +3,7 @@ DROP DATABASE IF EXISTS eatsy_food;
 CREATE DATABASE eatsy_food;
 SHOW DATABASES;
 USE eatsy_food;
-
+SELECT VERSION();
 -- User authorization
 -- CREATE USER 'eatsy_user'@'localhost' IDENTIFIED BY '123';
 -- GRANT ALL PRIVILEGES ON eatsy_food.* TO 'eatsy_user'@'localhost';
@@ -40,6 +40,7 @@ CREATE TABLE Users (
     payment_method_id INT,
 FOREIGN KEY (payment_method_id) REFERENCES PaymentMethods(payment_method_id)
 );
+
 -- Create Customer table
 CREATE TABLE Customers (
     customer_id CHAR(36) PRIMARY KEY,
@@ -52,28 +53,21 @@ CREATE TABLE Customers (
 CREATE TABLE Addresses (
     address_id CHAR(36) PRIMARY KEY,
     user_id CHAR(36) NOT NULL,
-
     street VARCHAR(500) NOT NULL,
-    ward VARCHAR(255) NOT NULL,
+    ward VARCHAR(255) NOT NULL NOT NULL NULL,
     city VARCHAR(255) NOT NULL,
-
+    zip_code VARCHAR(20),
     country VARCHAR(100) DEFAULT 'Vietnam',
 
     label ENUM('Home', 'Work', 'Other') DEFAULT 'Home',
     is_default BOOLEAN DEFAULT FALSE,
-
     latitude DECIMAL(10,8),
     longitude DECIMAL(11,8),
-
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
-
-    INDEX idx_user (user_id),
     INDEX idx_user_default (user_id, is_default)
 );
-
 
 -- Create Categories Table
 CREATE TABLE Categories (
@@ -272,7 +266,7 @@ CREATE TABLE UserVoucher (
 
 DELIMITER $$
 
--- 1. AUTO UUID
+-- Trigger for Addresses UUID
 CREATE TRIGGER insert_addresses_id_trigger
 BEFORE INSERT ON Addresses
 FOR EACH ROW
@@ -282,28 +276,16 @@ BEGIN
     END IF;
 END$$
 
--- 2. BEFORE INSERT DEFAULT
-CREATE TRIGGER before_insert_default_address
-BEFORE INSERT ON Addresses
+-- Ensure only one default address per user
+CREATE TRIGGER ensure_one_default_address
+AFTER INSERT ON Addresses
 FOR EACH ROW
 BEGIN
     IF NEW.is_default = TRUE THEN
-        UPDATE Addresses
-        SET is_default = FALSE
-        WHERE user_id = NEW.user_id;
-    END IF;
-END$$
-
--- 3. BEFORE UPDATE DEFAULT (SAFE VERSION)
-CREATE TRIGGER before_update_default_address
-BEFORE UPDATE ON Addresses
-FOR EACH ROW
-BEGIN
-    IF NEW.is_default = TRUE AND OLD.is_default = FALSE THEN
-        UPDATE Addresses
-        SET is_default = FALSE
+        UPDATE Addresses 
+        SET is_default = FALSE 
         WHERE user_id = NEW.user_id
-        AND address_id <> OLD.address_id;
+        AND address_id <> NEW.address_id;
     END IF;
 END$$
 

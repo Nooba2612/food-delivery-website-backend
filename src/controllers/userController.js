@@ -63,13 +63,13 @@ class UserController {
         }
     };
 
-    // PUT /profile - Update profile (name, phone, avatar)
+    // PUT /profile - Update profile (strict requirements)
     updateProfile = async (req, res) => {
         try {
-            const userId = req.user.user_id;
+            const userId = req.user.id; // Using .id as requested 
             let avatarUrl = null;
 
-            // Upload avatar to S3 if provided
+            // 1. Handle S3 Upload if file provided
             if (req.file) {
                 try {
                     avatarUrl = await uploadToS3(req.file, "profiles");
@@ -82,12 +82,13 @@ class UserController {
                 }
             }
 
-            // Prepare update data with S3 URL
+            // 2. Prepare update data (mapping avatarPath if uploaded)
             const updateData = {
                 ...req.body,
-                ...(avatarUrl && { avatar_path: avatarUrl }),
+                ...(avatarUrl && { avatarPath: avatarUrl }),
             };
 
+            // 3. Update via hardened service
             const profile = await updateProfile(userId, updateData);
 
             res.json({
@@ -135,6 +136,9 @@ class UserController {
         try {
             const userId = req.user.user_id;
             const addresses = await getAddressesByUserId(userId);
+            // CRITICAL: Prevent browser from caching (avoids stale 304 responses)
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.set('Pragma', 'no-cache');
             res.json({
                 success: true,
                 data: addresses,
@@ -202,17 +206,20 @@ class UserController {
         }
     };
 
-    // GET /addresses/:id/default - Set default address
+    // PUT /addresses/:id/default - Set default address
     setDefaultAddress = async (req, res) => {
         try {
             const userId = req.user.user_id;
             const { id } = req.params;
+            console.log(`📌 [Controller] setDefaultAddress called: userId=${userId}, addressId=${id}`);
             await setDefaultAddress(userId, id);
+            console.log(`✅ [Controller] setDefaultAddress SUCCESS for ${id}`);
             res.json({
                 success: true,
                 message: "Default address updated successfully",
             });
         } catch (error) {
+            console.error(`❌ [Controller] setDefaultAddress FAILED:`, error.message);
             res.status(400).json({
                 success: false,
                 message: error.message || "Failed to set default address",

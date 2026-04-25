@@ -31,9 +31,9 @@ const Address = sequelize.define(
       type: DataTypes.STRING(255),
       allowNull: false,
     },
-    country: {
-      type: DataTypes.STRING(100),
-      defaultValue: "Vietnam",
+    ward: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
     },
     isDefault: {
       type: DataTypes.BOOLEAN,

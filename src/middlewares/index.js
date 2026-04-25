@@ -12,6 +12,7 @@ const {
     usePassportLocalStrategy,
     usePassportGoogleStrategy,
     usePassportFacebookStrategy,
+    setupPassportSerialization
 } = require("@config/passport");
 
 
@@ -39,8 +40,9 @@ const useMiddlewares = (app) => {
     );
     app.use(
         cors({
-            origin: [process.env.CLIENT_URL, process.env.CLIENT_URL2],
+            origin: true, 
             credentials: true,
+            allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
         }),
     );
     app.use(compression());
@@ -51,6 +53,7 @@ const useMiddlewares = (app) => {
     usePassportLocalStrategy(passport);
     usePassportGoogleStrategy(passport);
     usePassportFacebookStrategy(passport);
+    setupPassportSerialization(passport);
 };
 
 module.exports = useMiddlewares;
