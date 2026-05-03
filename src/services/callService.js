@@ -20,8 +20,22 @@ class CallService {
             }
 
             // Check if users are in same conversation
-            const initiatorMember = await ConversationParticipantModel.isMember(conversationId, initiatorId);
-            const recipientMember = await ConversationParticipantModel.isMember(conversationId, recipientId);
+            let initiatorMember = false;
+            let recipientMember = false;
+
+            try {
+                initiatorMember = await ConversationParticipantModel.isMember(conversationId, initiatorId);
+            } catch (error) {
+                console.warn(`⚠️  Failed to check initiator membership:`, error.message);
+                initiatorMember = false;
+            }
+
+            try {
+                recipientMember = await ConversationParticipantModel.isMember(conversationId, recipientId);
+            } catch (error) {
+                console.warn(`⚠️  Failed to check recipient membership:`, error.message);
+                recipientMember = false;
+            }
 
             if (!initiatorMember || !recipientMember) {
                 throw new Error("Users are not in the same conversation");
@@ -76,6 +90,28 @@ class CallService {
             });
 
             // Clean up active call
+            const activeCall = await ActiveCallModel.findByCallId(callId);
+            if (activeCall) {
+                await ActiveCallModel.delete(activeCall.id);
+            }
+
+            return call;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Cancel a call (caller cancels before recipient accepts)
+     */
+    static async cancelCall(callId) {
+        try {
+            // Update call status
+            const call = await CallModel.update(callId, {
+                status: "cancelled",
+            });
+
+            // Clean up active call (if any)
             const activeCall = await ActiveCallModel.findByCallId(callId);
             if (activeCall) {
                 await ActiveCallModel.delete(activeCall.id);

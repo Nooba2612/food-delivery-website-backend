@@ -6,11 +6,11 @@ const getPayload = (user) => {
     const userId = user?.dataValues?.userId || user?.userId || user?.dataValues?.user_id || user?.user_id;
     const username = user?.dataValues?.username || user?.username;
     const role = user?.dataValues?.role || user?.role;
-    
-    return { 
-        user_id: userId, 
-        username: username, 
-        role: role 
+
+    return {
+        user_id: userId,
+        username: username,
+        role: role,
     };
 };
 
@@ -22,16 +22,16 @@ const generateJWT = (user, expiresIn) => {
 
 const generateTokens = (user) => {
     const accessSecret = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY;
-    const refreshSecret = process.env.JWT_REFRESH_SECRET;
-    
+    const refreshSecret = process.env.JWT_SECRET_KEY;
+
     const accessExpires = process.env.JWT_EXPIRES_IN || "15m";
     const refreshExpires = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
-    
+
     const payload = getPayload(user);
-    
+
     const accessToken = jwt.sign(payload, accessSecret, { expiresIn: accessExpires });
     const refreshToken = jwt.sign(payload, refreshSecret, { expiresIn: refreshExpires });
-    
+
     return { accessToken, refreshToken };
 };
 
