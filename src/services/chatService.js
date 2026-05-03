@@ -1,7 +1,7 @@
 const { v4: uuidv4 } = require("uuid");
-const ConversationModel = require("@models/ConversationModel");
-const ConversationParticipantModel = require("@models/ConversationParticipantModel");
-const MessageModel = require("@models/MessageModel");
+const ConversationModel = require("../models/ConversationModel");
+const ConversationParticipantModel = require("../models/ConversationParticipantModel");
+const MessageModel = require("../models/MessageModel");
 const userService = require("./userService");
 const { toCamelCase } = require("@utils/responseFormatter");
 
