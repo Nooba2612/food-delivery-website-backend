@@ -57,6 +57,75 @@ class CallService {
     }
 
     /**
+     * Initiate a group call
+     */
+    static async initiateGroupCall(initiatorId, conversationId, callType, participantIds) {
+        try {
+            if (!initiatorId || !conversationId || !callType || !participantIds || !Array.isArray(participantIds)) {
+                throw new Error("Missing required fields");
+            }
+
+            if (!["voice", "video"].includes(callType)) {
+                throw new Error("Invalid call type");
+            }
+
+            const call = await CallModel.create({
+                conversation_id: conversationId,
+                initiator_id: initiatorId,
+                call_type: callType,
+                is_group_call: true,
+                participant_ids: participantIds,
+                active_participant_ids: [initiatorId],
+                status: "ringing",
+            });
+
+            return call;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Add participant to group call
+     */
+    static async addGroupCallParticipant(callId, participantId) {
+        try {
+            const call = await CallModel.findById(callId);
+            if (!call) throw new Error("Call not found");
+
+            let activeParticipants = call.active_participant_ids || [];
+            if (!activeParticipants.includes(participantId)) {
+                activeParticipants.push(participantId);
+            }
+
+            return await CallModel.update(callId, {
+                active_participant_ids: activeParticipants
+            });
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Remove participant from group call
+     */
+    static async removeGroupCallParticipant(callId, participantId) {
+        try {
+            const call = await CallModel.findById(callId);
+            if (!call) throw new Error("Call not found");
+
+            let activeParticipants = call.active_participant_ids || [];
+            activeParticipants = activeParticipants.filter(id => id !== participantId);
+
+            return await CallModel.update(callId, {
+                active_participant_ids: activeParticipants
+            });
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
      * Accept a call
      */
     static async acceptCall(callId, recipientSocketId) {

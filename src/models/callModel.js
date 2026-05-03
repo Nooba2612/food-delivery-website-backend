@@ -19,9 +19,17 @@ class CallModel {
             },
         };
 
+        // For group calls
+        if (callData.is_group_call) {
+            params.Item.is_group_call = true;
+            params.Item.participant_ids = callData.participant_ids || [];
+            params.Item.active_participant_ids = callData.active_participant_ids || [];
+        }
+
         await dynamodb.put(params).promise();
         return params.Item;
     }
+
 
     static async findById(callId) {
         const params = {

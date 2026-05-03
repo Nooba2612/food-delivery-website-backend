@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const CallModel = require("@models/callModel");
 const ChatService = require("@services/chatService");
 const ConversationParticipantModel = require("@models/ConversationParticipantModel");
+const { getUserById } = require("@services/userService");
 
 // Store active user connections
 // Format: { userId: { socketId: socket, conversationIds: [...] } }
@@ -102,38 +103,100 @@ const initializeWebSocket = (server) => {
         // ===== CALL HANDLERS =====
 
         // Initiate call
-        socket.on("call_user", (data) => {
+        socket.on("call_user", async (data) => {
             const { callId, recipientId, callType, conversationId } = data;
             const recipientRoom = `user:${recipientId}`;
 
             console.log(`📞 Call initiated from ${userId} to ${recipientId} (${callType})`);
 
+            // Fetch fresh user data to get full name and avatar
+            const initiator = await getUserById(userId);
+            const callerName = initiator?.fullname || initiator?.username || socket.user?.username || "Unknown";
+            const callerAvatar = initiator?.avatarPath || initiator?.avatar_path || socket.user?.avatar || null;
+
             io.to(recipientRoom).emit("incoming_call", {
                 callId,
                 callerId: userId,
-                callerName: socket.user?.full_name || "Unknown",
-                callerAvatar: socket.user?.avatar || null,
+                callerName,
+                callerAvatar,
                 callType,
                 conversationId,
                 timestamp: new Date().toISOString(),
             });
         });
 
+        // Initiate group call
+        socket.on("group_call_initiated", async (data) => {
+            const { callId, conversationId, callType, initiatorId, participantIds } = data;
+            const effectiveInitiatorId = initiatorId || userId;
+
+            console.log(`📞 Group call initiated from ${effectiveInitiatorId} to ${participantIds?.length || 0} participants`);
+
+            // Fetch fresh user data to get full name and avatar
+            const initiator = await getUserById(effectiveInitiatorId);
+            const callerName = initiator?.fullname || initiator?.username || socket.user?.username || "Unknown";
+            const callerAvatar = initiator?.avatarPath || initiator?.avatar_path || socket.user?.avatar || null;
+
+            if (Array.isArray(participantIds)) {
+                participantIds.forEach(participantId => {
+                    if (participantId !== effectiveInitiatorId) {
+                        const recipientRoom = `user:${participantId}`;
+                        io.to(recipientRoom).emit("incoming_call", {
+                            callId,
+                            callerId: effectiveInitiatorId,
+                            callerName,
+                            callerAvatar,
+                            callType,
+                            conversationId,
+                            isGroupCall: true,
+                            participantIds,
+                            timestamp: new Date().toISOString(),
+                        });
+                    }
+                });
+            }
+        });
+
         // Accept call
-        socket.on("accept_call", (data) => {
-            const { callId, callerId } = data;
+        socket.on("accept_call", async (data) => {
+            const { callId, callerId, conversationId } = data;
             const callerRoom = `user:${callerId}`;
 
-            console.log(`✅ Call accepted: ${callId} by user ${userId}`);
+            console.log(`✅ Call accepted: ${callId} by user ${userId} in conversation ${conversationId || "none"}`);
 
-            io.to(callerRoom).emit("call_accepted", {
+            // Fetch fresh user data to get full name and avatar
+            const recipient = await getUserById(userId);
+            const recipientName = recipient?.fullname || recipient?.username || socket.user?.username || "Unknown";
+            const recipientAvatar = recipient?.avatarPath || recipient?.avatar_path || socket.user?.avatar || null;
+
+            const acceptancePayload = {
                 callId,
                 recipientId: userId,
                 recipientSocketId: socket.id,
-                recipientName: socket.user?.full_name || "Unknown",
-                recipientAvatar: socket.user?.avatar || null,
+                recipientName,
+                recipientAvatar,
                 timestamp: new Date().toISOString(),
-            });
+                conversationId,
+            };
+
+            // If it's a group call, broadcast to the entire group
+            if (conversationId) {
+                try {
+                    const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+                    members.forEach((member) => {
+                        // Notify everyone including the initiator
+                        io.to(`user:${member.user_id}`).emit("call_accepted", acceptancePayload);
+                    });
+                    console.log(`✅ Broadcasted call_accepted to ${members.length} group members`);
+                } catch (error) {
+                    console.error("❌ Error broadcasting call_accepted to group:", error.message);
+                    // Fallback to initiator only
+                    io.to(callerRoom).emit("call_accepted", acceptancePayload);
+                }
+            } else {
+                // For 1-on-1, notify initiator
+                io.to(callerRoom).emit("call_accepted", acceptancePayload);
+            }
         });
 
         // Reject call
@@ -208,12 +271,31 @@ const initializeWebSocket = (server) => {
                 console.error(`❌ Failed to update call status: ${error.message}`);
             }
 
-            // Emit to recipient
-            io.to(recipientRoom).emit("call_cancelled", {
-                callId,
-                reason: "Caller cancelled",
-                timestamp: new Date().toISOString(),
-            });
+            // Emit to recipient or conversation room members
+            const conversationId = data.conversationId;
+            if (conversationId) {
+                try {
+                    const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+                    members.forEach((member) => {
+                        if (member.user_id !== userId) {
+                            io.to(`user:${member.user_id}`).emit("call_cancelled", {
+                                callId,
+                                reason: "Call cancelled",
+                                timestamp: new Date().toISOString(),
+                            });
+                        }
+                    });
+                    console.log(`🚫 Broadcasted call_cancelled to ${members.length} members of group ${conversationId}`);
+                } catch (error) {
+                    console.error("❌ Error broadcasting call_cancelled to group:", error.message);
+                }
+            } else {
+                io.to(recipientRoom).emit("call_cancelled", {
+                    callId,
+                    reason: "Caller cancelled",
+                    timestamp: new Date().toISOString(),
+                });
+            }
         });
 
         // Backup event name for cancel call
@@ -233,12 +315,23 @@ const initializeWebSocket = (server) => {
                 console.error(`❌ Failed to update call status: ${error.message}`);
             }
 
-            // Emit to recipient
-            io.to(recipientRoom).emit("call_cancelled", {
-                callId,
-                reason: "Caller cancelled",
-                timestamp: new Date().toISOString(),
-            });
+            // Emit to recipient or conversation room
+            const conversationId = data.conversationId;
+            if (conversationId) {
+                const groupRoom = `conversation_${conversationId}`;
+                console.log(`🚫 Broadcasting call_cancelled to group: ${groupRoom}`);
+                io.to(groupRoom).emit("call_cancelled", {
+                    callId,
+                    reason: "Call cancelled",
+                    timestamp: new Date().toISOString(),
+                });
+            } else {
+                io.to(recipientRoom).emit("call_cancelled", {
+                    callId,
+                    reason: "Caller cancelled",
+                    timestamp: new Date().toISOString(),
+                });
+            }
         });
 
         // End call
@@ -251,7 +344,7 @@ const initializeWebSocket = (server) => {
                 duration: data.duration,
             });
 
-            const { callId, recipientId, toUserId, duration } = data;
+            const { callId, recipientId, toUserId, duration, conversationId } = data;
             let targetUserId = recipientId || toUserId;
 
             // If recipientId not provided, look up from call record
@@ -272,7 +365,23 @@ const initializeWebSocket = (server) => {
 
             console.log(`⏹️  Call ended: ${callId || "unknown"} - Duration: ${duration}s, Recipient: ${targetUserId}`);
 
-            if (targetUserId) {
+            if (conversationId) {
+                try {
+                    const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+                    members.forEach((member) => {
+                        if (member.user_id !== userId) {
+                            io.to(`user:${member.user_id}`).emit("call_ended", {
+                                callId,
+                                duration,
+                                timestamp: new Date().toISOString(),
+                            });
+                        }
+                    });
+                    console.log(`⏹️  Broadcasted call_ended to ${members.length} members of group ${conversationId}`);
+                } catch (error) {
+                    console.error("❌ Error broadcasting call_ended to group:", error.message);
+                }
+            } else if (targetUserId) {
                 io.to(recipientRoom).emit("call_ended", {
                     callId,
                     duration,
