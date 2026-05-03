@@ -5,13 +5,13 @@ const TABLE_NAME = "calls";
 
 class CallModel {
     static async create(callData) {
-        const id = uuidv4();
+        const call_id = uuidv4();
         const now = new Date().toISOString();
 
         const params = {
             TableName: TABLE_NAME,
             Item: {
-                id,
+                call_id,
                 ...callData,
                 status: "ringing", // ringing, accepted, rejected, ended, missed
                 created_at: now,
@@ -26,7 +26,7 @@ class CallModel {
     static async findById(callId) {
         const params = {
             TableName: TABLE_NAME,
-            Key: { id: callId },
+            Key: { call_id: callId },
         };
 
         const result = await dynamodb.get(params).promise();
@@ -36,7 +36,7 @@ class CallModel {
     static async update(callId, updateData) {
         const now = new Date().toISOString();
         const updateFields = Object.keys(updateData)
-            .map((key) => `${key} = :${key}`)
+            .map((key) => `#${key} = :${key}`)
             .join(", ");
 
         const expressionAttributeValues = Object.keys(updateData).reduce(
@@ -47,10 +47,19 @@ class CallModel {
             { ":updated_at": now },
         );
 
+        const expressionAttributeNames = Object.keys(updateData).reduce(
+            (acc, key) => {
+                acc[`#${key}`] = key;
+                return acc;
+            },
+            { "#updated_at": "updated_at" },
+        );
+
         const params = {
             TableName: TABLE_NAME,
-            Key: { id: callId },
-            UpdateExpression: `SET ${updateFields}, updated_at = :updated_at`,
+            Key: { call_id: callId },
+            UpdateExpression: `SET ${updateFields}, #updated_at = :updated_at`,
+            ExpressionAttributeNames: expressionAttributeNames,
             ExpressionAttributeValues: expressionAttributeValues,
             ReturnValues: "ALL_NEW",
         };
@@ -88,8 +97,8 @@ class CallModel {
     static async getActiveCallsForUser(userId) {
         const params = {
             TableName: TABLE_NAME,
-            IndexName: "user_id-status-index",
-            KeyConditionExpression: "user_id = :userId AND #status IN (:ringing, :accepted)",
+            IndexName: "initiator_id-status-index",
+            KeyConditionExpression: "initiator_id = :userId AND #status IN (:ringing, :accepted)",
             ExpressionAttributeNames: {
                 "#status": "status",
             },
