@@ -201,4 +201,61 @@ router.post("/:callId/end", authMiddleware, callController.endCall);
  */
 router.get("/:conversationId/history", authMiddleware, callController.getCallHistory);
 
+/**
+ * @swagger
+ * /api/calls/group:
+ *   post:
+ *     summary: Initiate a group call
+ *     tags:
+ *       - Calls
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Group call initiated successfully
+ */
+router.post("/group", authMiddleware, callController.initiateGroupCall);
+
+/**
+ * @swagger
+ * /api/calls/{callId}/add-participant:
+ *   post:
+ *     summary: Add a participant to a group call
+ *     tags:
+ *       - Calls
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: callId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Participant added
+ */
+router.post("/:callId/add-participant", authMiddleware, callController.addParticipant);
+
+/**
+ * @swagger
+ * /api/calls/{callId}/remove-participant:
+ *   post:
+ *     summary: Remove a participant from a group call
+ *     tags:
+ *       - Calls
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: callId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Participant removed
+ */
+router.post("/:callId/remove-participant", authMiddleware, callController.removeParticipant);
+
 module.exports = router;

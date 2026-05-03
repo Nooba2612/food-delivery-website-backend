@@ -38,7 +38,7 @@ class authController {
       console.log("\n\nSent OTP: ", otp);
 
       saveOTP(countryCode, phone, otp);
-      // createVerification(countryCode + phone, otp);
+      createVerification(countryCode + phone, otp);
 
       res.status(200).json({ success: true });
     } catch (error) {
@@ -282,7 +282,7 @@ class authController {
         console.log("\n\nSent OTP: ", otp);
 
         saveOTP(countryCode, info, otp);
-        // createVerification(countryCode + phone, otp);
+        createVerification(countryCode + phone, otp);
 
         return res.status(200).json({ success: true });
       } catch (error) {
