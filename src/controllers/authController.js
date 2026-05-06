@@ -34,13 +34,30 @@ class authController {
       }
 
       const otp = generateOTP();
+      console.log(`[OTP] Generated for ${countryCode}${phone}: ${otp}`);
 
-      console.log("\n\nSent OTP: ", otp);
+      await saveOTP(countryCode, phone, otp);
+      console.log(`[OTP] Saved to database for ${countryCode}${phone}`);
 
-      saveOTP(countryCode, phone, otp);
-      createVerification(countryCode + phone, otp);
+      const twilioResult = await createVerification(countryCode + phone, otp, "verification");
 
-      res.status(200).json({ success: true });
+      if (!twilioResult.success) {
+        // If it's a configuration issue (dummy credentials), we might still want fallback in dev
+        if (twilioResult.error === "Twilio misconfigured" && process.env.NODE_ENV !== "production") {
+            console.warn("Twilio misconfigured, using development OTP fallback");
+            return res.status(200).json({
+                success: true,
+                message: "Development OTP fallback",
+                otp: otp,
+            });
+        }
+        
+        console.error(`[Twilio] SMS Delivery Failed for ${countryCode}${phone}:`, twilioResult.error);
+        return res.status(400).json({ success: false, message: "Failed to send OTP SMS" });
+      }
+
+      console.log(`[Twilio] SMS Sent Successfully to ${countryCode}${phone}`);
+      res.status(200).json({ success: true, message: "OTP sent successfully" });
     } catch (error) {
       console.log(error);
       return res
@@ -279,14 +296,32 @@ class authController {
 
     if (info && regexVietnamPhoneNumber.test(info)) {
       try {
-        console.log("\n\nSent OTP: ", otp);
+        console.log(`[OTP] Generated Reset OTP for ${countryCode}${info}: ${otp}`);
 
-        saveOTP(countryCode, info, otp);
-        createVerification(countryCode + phone, otp);
+        await saveOTP(countryCode, info, otp);
+        console.log(`[OTP] Saved Reset OTP to database for ${countryCode}${info}`);
 
-        return res.status(200).json({ success: true });
+        const twilioResult = await createVerification(countryCode + info, otp, "reset");
+
+        if (!twilioResult.success) {
+          if (twilioResult.error === "Twilio misconfigured" && process.env.NODE_ENV !== "production") {
+              console.warn("Twilio misconfigured, using development OTP fallback");
+              return res.status(200).json({
+                  success: true,
+                  message: "Development OTP fallback",
+                  otp: otp,
+              });
+          }
+          
+          console.error(`[Twilio] Reset SMS Delivery Failed for ${countryCode}${info}:`, twilioResult.error);
+          return res.status(400).json({ success: false, message: "Failed to send OTP SMS" });
+        }
+
+        console.log(`[Twilio] Reset SMS Sent Successfully to ${countryCode}${info}`);
+        return res.status(200).json({ success: true, message: "OTP sent successfully" });
       } catch (error) {
-        console.log("Send otp to phone number failed: " + error);
+        console.error("Send otp to phone number failed:", error);
+        return res.status(500).json({ success: false, message: "Failed to send OTP SMS" });
       }
     }
 
