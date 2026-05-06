@@ -2,8 +2,10 @@ const express = require("express");
 const router = express.Router();
 
 const chatController = require("@controllers/chatController");
+const chatCustomizationController = require("@controllers/chatCustomizationController");
 const { authMiddleware } = require("@middlewares/authMiddleware");
 const { messageUpload, conversationUpload } = require("@config/multer");
+
 
 /**
  * @swagger
@@ -508,7 +510,7 @@ router.put("/:conversationId/settings", authMiddleware, chatController.updateCon
  *       401:
  *         description: Unauthorized
  */
-router.post("/messages", authMiddleware, chatController.getMessages);
+router.get("/:conversationId/messages", authMiddleware, chatController.getMessages);
 
 // Send message
 /**
@@ -856,13 +858,14 @@ router.put("/:conversationId/messages/:messageId/recall", authMiddleware, chatCo
  *     responses:
  *       200:
  *         description: Conversation marked as read
-     *         content:
-     *           application/json:
-     *             schema:
-     *               type: object
-     *               properties:
-     *                 success:
-     *                   type: boolean
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ */
 router.put("/:conversationId/read", authMiddleware, chatController.markConversationAsRead);
 
 // Add reaction to message
@@ -1133,5 +1136,122 @@ router.put("/:conversationId/members/role", authMiddleware, chatController.updat
  *         description: Message forwarded
  */
 router.post("/:conversationId/messages/forward", authMiddleware, chatController.forwardMessage);
+
+// ============================================================
+// FEATURE 1: CHAT THEME / BACKGROUND
+// ============================================================
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/theme:
+ *   get:
+ *     summary: Get the current user's chat theme for a conversation
+ *     tags:
+ *       - Chat - Customization
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Theme settings retrieved
+ */
+router.get("/:conversationId/theme", authMiddleware, chatCustomizationController.getConversationTheme);
+
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/settings:
+ *   get:
+ *     summary: Get conversation settings (theme and notifications)
+ *     tags:
+ *       - Chat - Customization
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Settings retrieved
+ */
+router.get("/:conversationId/settings", authMiddleware, chatCustomizationController.getConversationSettings);
+
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/theme:
+ *   put:
+ *     summary: Update chat theme
+ *     tags:
+ *       - Chat - Customization
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               themeType:
+ *                 type: string
+ *               backgroundColor:
+ *                 type: string
+ *               backgroundImage:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Theme updated
+ */
+router.put(
+    "/:conversationId/theme",
+    authMiddleware,
+    conversationUpload.single("backgroundImage"),
+    chatCustomizationController.updateConversationTheme,
+);
+
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/mute:
+ *   put:
+ *     summary: Mute or unmute notifications for a conversation
+ *     tags:
+ *       - Chat - Customization
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - type
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 enum: [1_hour, 8_hours, 24_hours, forever, unmute]
+ *     responses:
+ *       200:
+ *         description: Notification settings updated
+ */
+router.put("/:conversationId/mute", authMiddleware, chatCustomizationController.updateNotificationSettings);
 
 module.exports = router;

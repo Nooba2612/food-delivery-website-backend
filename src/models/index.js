@@ -17,6 +17,8 @@ const accountVoucher = require("@models/userVoucher");
 const addressModel = require("@models/addressModel");
 const supportConversationModel = require("@models/supportConversationModel");
 const supportMessageModel = require("@models/supportMessageModel");
+const conversationSettingsModel = require("@models/conversationSettingsModel");
+const conversationNotificationSettingsModel = require("@models/conversationNotificationSettingsModel");
 
 sequelize
   .sync()
@@ -43,6 +45,8 @@ module.exports = {
   addressModel,
   supportConversationModel,
   supportMessageModel,
+  conversationSettingsModel,
+  conversationNotificationSettingsModel,
 };
 
 // Define associations after all models loaded

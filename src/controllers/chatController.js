@@ -1,11 +1,13 @@
 const ChatService = require("@services/chatService");
 const { uploadToS3 } = require("@config/multer");
 const websocket = require("../websocket");
+const { getCurrentUserId } = require("@utils/authUtils");
 
 // Get user's conversations
 const getConversations = async (req, res) => {
     try {
-        const userId = req.user.user_id;
+        const userId = getCurrentUserId(req);
+        console.log(`[CHAT DEBUG] getConversations - userId: ${userId}`);
         const { limit = 20, cursor } = req.query;
 
         const result = await ChatService.getUserConversations(userId, parseInt(limit), cursor);
@@ -52,8 +54,9 @@ const getConversationsByUserId = async (req, res) => {
 // Get or create 1-to-1 conversation
 const getOrCreateDirectConversation = async (req, res) => {
     try {
-        const userId = req.user.user_id;
+        const userId = getCurrentUserId(req);
         const { participantId } = req.body;
+        console.log(`[CHAT DEBUG] getOrCreateDirectConversation - userId: ${userId}, participantId: ${participantId}`);
 
         if (!participantId) {
             return res.status(400).json({
@@ -79,8 +82,9 @@ const getOrCreateDirectConversation = async (req, res) => {
 // Create group conversation
 const createGroupConversation = async (req, res) => {
     try {
-        const userId = req.user.user_id;
+        const userId = getCurrentUserId(req);
         let { name, participantIds } = req.body;
+        console.log(`[CHAT DEBUG] createGroupConversation - userId: ${userId}, name: ${name}`);
         let avatarPath = null;
 
         // participantIds might be a JSON string if sent via FormData
@@ -137,8 +141,9 @@ const createGroupConversation = async (req, res) => {
 // Get conversation details
 const getConversationDetails = async (req, res) => {
     try {
-        const userId = req.user.user_id;
+        const userId = getCurrentUserId(req);
         const { conversationId } = req.body;
+        console.log(`[CHAT DEBUG] getConversationDetails - userId: ${userId}, conversationId: ${conversationId}`);
 
         if (!conversationId) {
             return res.status(400).json({
@@ -164,8 +169,11 @@ const getConversationDetails = async (req, res) => {
 // Get messages in conversation
 const getMessages = async (req, res) => {
     try {
-        const userId = req.user.user_id;
-        const { conversationId, limit = 50, cursor } = req.body;
+        const userId = getCurrentUserId(req);
+        const { conversationId } = req.params;
+        const { limit = 100, cursor } = req.query;
+
+        console.log(`[CHAT DEBUG] getMessages - userId: ${userId}, conversationId: ${conversationId}, limit: ${limit}, cursor: ${cursor}`);
 
         if (!conversationId) {
             return res.status(400).json({
@@ -176,11 +184,20 @@ const getMessages = async (req, res) => {
 
         const result = await ChatService.getConversationHistory(conversationId, userId, parseInt(limit), cursor);
 
+        console.log(`[LOAD MESSAGES] 
+        conversationId: ${conversationId}
+        currentUserId: ${userId}
+        messages found: ${result.messages.length}
+        hasMore: ${result.hasMore}`);
+
         res.status(200).json({
             success: true,
-            data: result,
+            messages: result.messages,
+            hasMore: result.hasMore,
+            nextCursor: result.nextCursor
         });
     } catch (error) {
+        console.error(`[CHAT DEBUG] getMessages error for user ${getCurrentUserId(req)}: ${error.message}`);
         res.status(400).json({
             success: false,
             message: error.message,
@@ -191,8 +208,9 @@ const getMessages = async (req, res) => {
 // Send message
 const sendMessage = async (req, res) => {
     try {
-        const userId = req.user.user_id;
+        const userId = getCurrentUserId(req);
         const { conversationId } = req.params;
+        console.log(`[CHAT DEBUG] sendMessage - userId: ${userId}, conversationId: ${conversationId}`);
         const { content, type = "text", mentions = [], replyToId } = req.body;
         const io = req.app.get("io");
 
@@ -248,7 +266,7 @@ const sendMessage = async (req, res) => {
             for (const member of members) {
                 const unreadCount = member.user_id !== userId ? (member.unread_count || 0) + 1 : 0;
 
-                emitConversationUpdated(io, conversationId, [member.user_id], {
+                await emitConversationUpdated(io, conversationId, [member.user_id], {
                     lastMessage: {
                         messageId: message.messageId,
                         content:
@@ -477,6 +495,7 @@ const markMessagesAsRead = async (req, res) => {
         const userId = req.user.user_id;
         const { conversationId } = req.params;
         const { messageIds } = req.body;
+        const io = req.app.get("io");
 
         if (!messageIds || messageIds.length === 0) {
             return res.status(400).json({
@@ -486,6 +505,12 @@ const markMessagesAsRead = async (req, res) => {
         }
 
         const result = await ChatService.markMessagesAsRead(userId, conversationId, messageIds);
+
+        // Emit real-time read status to other members
+        if (io) {
+            const { emitMessageRead } = require("@websocket");
+            emitMessageRead(io, conversationId, messageIds, userId);
+        }
 
         res.status(200).json({
             success: true,
@@ -620,7 +645,7 @@ const addMemberToGroup = async (req, res) => {
         if (io) {
             const { emitMemberAdded, emitMessageToConversation, emitConversationUpdated } = require("@websocket");
             const ids = Array.isArray(memberIds) ? memberIds : [memberIds];
-            
+
             // Fetch updated member list to notify everyone
             const members = await require("@models/ConversationParticipantModel").findMembersOfConversation(conversationId);
             const allMemberIds = members.map(m => m.user_id);
@@ -630,7 +655,7 @@ const addMemberToGroup = async (req, res) => {
                     memberId,
                     joinedAt: new Date().toISOString(),
                 });
-                
+
                 // Notify the newly added user to refresh their conversation list
                 const userRoom = `user:${memberId}`;
                 io.to(userRoom).emit("member_added_to_new_group", {
@@ -638,11 +663,11 @@ const addMemberToGroup = async (req, res) => {
                     addedBy: userId
                 });
             }
-            
+
             // Broadcast system messages
             for (const sysMsg of result.systemMessages || []) {
                 emitMessageToConversation(io, conversationId, sysMsg);
-                
+
                 emitConversationUpdated(io, conversationId, allMemberIds, {
                     lastMessage: sysMsg,
                     lastMessageTimestamp: sysMsg.createdAt,
@@ -683,7 +708,7 @@ const removeMemberFromGroup = async (req, res) => {
         // Emit real-time member removed event
         if (io) {
             const { emitMemberRemoved, emitConversationUpdated, emitMessageToConversation } = require("@websocket");
-            
+
             // 1. Notify the whole conversation room about the removal
             emitMemberRemoved(io, conversationId, memberId);
 
@@ -691,7 +716,7 @@ const removeMemberFromGroup = async (req, res) => {
             if (result.systemMessage) {
                 emitMessageToConversation(io, conversationId, result.systemMessage);
             }
-            
+
             // 2. Also notify the removed member's personal room (important for real-time kick)
             const userRoom = `user:${memberId}`;
             io.to(userRoom).emit("member_removed", {
@@ -704,7 +729,7 @@ const removeMemberFromGroup = async (req, res) => {
             // 3. Update conversation list for remaining members
             const members = await require("@models/ConversationParticipantModel").findMembersOfConversation(conversationId);
             const remainingMemberIds = members.map((m) => m.user_id);
-            
+
             emitConversationUpdated(io, conversationId, remainingMemberIds, {
                 lastMessage: result.systemMessage,
                 lastMessageTimestamp: result.systemMessage.createdAt,
@@ -838,7 +863,7 @@ const disbandGroup = async (req, res) => {
             const members = await require("@models/ConversationParticipantModel").findMembersOfConversation(conversationId);
             const memberIds = members.map((m) => m.user_id);
 
-            emitConversationUpdated(io, conversationId, memberIds, {
+            await emitConversationUpdated(io, conversationId, memberIds, {
                 lastMessage: {
                     content: "This group was disbanded",
                     type: "system",

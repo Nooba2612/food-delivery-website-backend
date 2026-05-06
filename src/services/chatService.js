@@ -114,7 +114,7 @@ class ChatService {
                     // Filter out inactive 1-to-1 conversations, but keep group conversations (even if disbanded)
                     if (conversation.type === "1to1" && conversation.is_active === false) continue;
                     const members = await ConversationParticipantModel.findMembersOfConversation(participant.conversation_id);
-                    
+
                     let convData = {
                         ...conversation,
                         unreadCount: participant.unread_count,
@@ -234,20 +234,45 @@ class ChatService {
         }
     }
 
-    // Send message
+    // Send message to conversation
     static async sendMessage(userId, conversationId, messageData) {
         try {
+            console.log(`[CHAT DEBUG] sendMessage - conversationId: ${conversationId}, userId: ${userId}`);
+
             // Check conversation exists and is active
             const conversation = await ConversationModel.findById(conversationId);
-            if (!conversation || conversation.is_active === false) {
+            if (!conversation) {
+                console.error(`[CHAT DEBUG] Conversation ${conversationId} not found`);
                 throw new Error("Conversation not found");
             }
 
-            // Check user is member
-            const isMember = await ConversationParticipantModel.isMember(conversationId, userId);
+            // Check if user is member
+            let isMember = await ConversationParticipantModel.isMember(conversationId, userId);
+
+            // Task 1 & 6: Auto-repair membership for missing participants
             if (!isMember) {
+                console.warn(`[CHAT DEBUG] User ${userId} is not a member of ${conversationId}. Checking for restoration...`);
+
+                const hasHistory = await MessageModel.hasUserSentMessages(conversationId, userId);
+                const isCreator = conversation.created_by === userId;
+
+                if (hasHistory || isCreator || conversation.type === '1to1') {
+                    console.log(`[CHAT DEBUG] Restoring membership record for user ${userId} in conversation ${conversationId}`);
+                    await ConversationParticipantModel.create({
+                        conversation_id: conversationId,
+                        user_id: userId,
+                        role: isCreator ? 'admin' : 'member'
+                    });
+                    isMember = true;
+                }
+            }
+
+            if (!isMember) {
+                console.error(`[CHAT DEBUG] Membership verification failed for user ${userId} in conversation ${conversationId}`);
                 throw new Error("Not a member of this conversation");
             }
+
+            console.log(`[CHAT DEBUG] Sender ${userId} verified for conversation ${conversationId}`);
 
             // Clear deleted_at if user sends a message (restore conversation)
             const deletedAt = await ConversationParticipantModel.getDeletedAt(conversationId, userId);
@@ -291,34 +316,82 @@ class ChatService {
     // Get conversation history
     static async getConversationHistory(conversationId, userId, limit = 50, cursor = null) {
         try {
+            console.log(`[CHAT DEBUG] getConversationHistory - conversationId: ${conversationId}, userId: ${userId}`);
+
             // Check conversation exists and is active
             const conversation = await ConversationModel.findById(conversationId);
-            if (!conversation || (conversation.is_active === false && conversation.type === "1to1")) {
+            if (!conversation) {
+                console.error(`[CHAT DEBUG] Conversation ${conversationId} not found`);
                 throw new Error("Conversation not found");
             }
 
             // Check user is member
-            const isMember = await ConversationParticipantModel.isMember(conversationId, userId);
+            let isMember = await ConversationParticipantModel.isMember(conversationId, userId);
+
+            // Task 1 & 6: Auto-repair membership for missing participants
             if (!isMember) {
+                console.warn(`[CHAT DEBUG] User ${userId} is not a member of ${conversationId}. Auditing history for restoration...`);
+
+                const hasHistory = await MessageModel.hasUserSentMessages(conversationId, userId);
+                const isCreator = conversation.created_by === userId;
+
+                if (hasHistory || isCreator || conversation.type === '1to1') {
+                    console.log(`[CHAT DEBUG] Participant verified via history/creator status. Restoring membership for ${userId}`);
+                    await ConversationParticipantModel.create({
+                        conversation_id: conversationId,
+                        user_id: userId,
+                        role: isCreator ? 'admin' : 'member'
+                    });
+                    isMember = true;
+                }
+            }
+
+            if (!isMember) {
+                console.error(`[CHAT DEBUG] History access denied: User ${userId} is not a participant of ${conversationId}`);
                 throw new Error("Not a member of this conversation");
             }
+
+            console.log(`[CHAT DEBUG] Participant ${userId} found and verified for ${conversationId}`);
 
             // Get deleted_at timestamp for this user
             const deletedAt = await ConversationParticipantModel.getDeletedAt(conversationId, userId);
 
+            console.log(`[LOAD MESSAGES] Fetching history for ${conversationId}, deletedAt: ${deletedAt}`);
             const result = await MessageModel.getHistory(conversationId, limit, cursor, userId, deletedAt);
 
-            const messages = [];
+            console.log(`[LOAD MESSAGES] MessageModel returned ${result.messages.length} messages`);
+
+            const processedMessages = [];
             for (const msg of result.messages) {
-                const sender = await userService.getUserById(msg.sender_id);
-                messages.push(
-                    toCamelCase({
+                try {
+                    const sender = await userService.getUserById(msg.sender_id);
+                    const transformed = toCamelCase({
                         ...msg,
                         senderName: sender?.fullname || sender?.username || "Unknown User",
                         senderAvatar: sender?.avatar_path || null,
-                    }),
-                );
+                        senderId: msg.sender_id, // Ensure senderId is explicitly at top level
+                        senderDetails: sender ? {
+                            id: sender.id || sender.user_id,
+                            fullname: sender.fullname,
+                            avatar_path: sender.avatar_path
+                        } : null
+                    });
+                    processedMessages.push(transformed);
+                } catch (err) {
+                    console.error(`[LOAD MESSAGES] Error processing message ${msg.message_id}:`, err);
+                    // Still push the message even if sender fetch fails
+                    processedMessages.push(toCamelCase({
+                        ...msg,
+                        senderId: msg.sender_id
+                    }));
+                }
             }
+
+            // Task 4: Reverse to ensure chronological order (oldest first) in the response array
+            // This matches the "fetch DESC then reverse" requirement
+            const messages = processedMessages.reverse();
+
+            console.log(`[LOAD MESSAGES] Final processed and REVERSED messages count: ${messages.length} for conversation ${conversationId}`);
 
             return {
                 messages,
@@ -603,10 +676,10 @@ class ChatService {
             // Update conversation last message
             await ConversationModel.updateLastMessage(conversationId, systemMsg.message_id, new Date().toISOString());
 
-            return { 
-                success: true, 
-                adminName, 
-                removedName, 
+            return {
+                success: true,
+                adminName,
+                removedName,
                 memberId,
                 systemMessage: toCamelCase(systemMsg)
             };

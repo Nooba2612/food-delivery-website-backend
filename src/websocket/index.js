@@ -4,6 +4,8 @@ const CallModel = require("@models/callModel");
 const ChatService = require("@services/chatService");
 const ConversationParticipantModel = require("@models/ConversationParticipantModel");
 const { getUserById } = require("@services/userService");
+const { Op } = require("sequelize");
+const ConversationNotificationSettings = require("@models/conversationNotificationSettingsModel");
 
 // Store active user connections
 // Format: { userId: { socketId: socket, conversationIds: [...] } }
@@ -810,18 +812,40 @@ const emitMemberRemoved = (io, conversationId, memberId) => {
  * @param {Array} memberIds - Array of member user IDs
  * @param {object} conversationData - Updated conversation data with lastMessage object
  */
-const emitConversationUpdated = (io, conversationId, memberIds, conversationData) => {
-    // Emit to each member's personal room so they see updated conversation list
-    for (const memberId of memberIds) {
-        const userRoom = `user:${memberId}`;
-        io.to(userRoom).emit("conversation_updated", {
-            conversationId,
-            lastMessage: conversationData.lastMessage || null,
-            lastMessageTimestamp: conversationData.lastMessageTimestamp,
-            lastMessageId: conversationData.lastMessageId,
-            unreadCount: conversationData.unreadCount,
-            timestamp: new Date().toISOString(),
+const emitConversationUpdated = async (io, conversationId, memberIds, conversationData) => {
+    try {
+        // Fetch mute settings for all members at once
+        const muteSettings = await ConversationNotificationSettings.findAll({
+            where: {
+                conversation_id: conversationId,
+                user_id: { [Op.in]: memberIds },
+            },
         });
+
+        const muteMap = {};
+        const now = new Date();
+        muteSettings.forEach((s) => {
+            const isMuted = s.is_muted_forever || (s.mute_until && new Date(s.mute_until) > now);
+            muteMap[s.user_id] = isMuted;
+        });
+
+        // Emit to each member's personal room so they see updated conversation list
+        for (const memberId of memberIds) {
+            const userRoom = `user:${memberId}`;
+            const isMuted = !!muteMap[memberId];
+
+            io.to(userRoom).emit("conversation_updated", {
+                conversationId,
+                lastMessage: conversationData.lastMessage || null,
+                lastMessageTimestamp: conversationData.lastMessageTimestamp,
+                lastMessageId: conversationData.lastMessageId,
+                unreadCount: conversationData.unreadCount,
+                isMuted, // Frontend uses this to suppress sound/popup
+                timestamp: new Date().toISOString(),
+            });
+        }
+    } catch (error) {
+        console.error("❌ Error in emitConversationUpdated:", error.message);
     }
 };
 
@@ -987,6 +1011,17 @@ const emitMemberRoleUpdated = (io, conversationId, data) => {
     });
 };
 
+/**
+ * Emit order updated
+ * @param {SocketIO.Server} io - Socket.io server instance
+ * @param {string} userId - User ID to receive update
+ * @param {object} orderData - Order data
+ */
+const emitOrderUpdated = (io, userId, orderData) => {
+    const userRoom = `user:${userId}`;
+    io.to(userRoom).emit("order_updated", orderData);
+};
+
 module.exports = {
     initializeWebSocket,
     emitMessageToConversation,
@@ -1010,4 +1045,6 @@ module.exports = {
     emitAnswer,
     emitICECandidate,
     emitNewConversation,
+    emitOrderUpdated,
 };
+

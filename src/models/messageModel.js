@@ -41,31 +41,85 @@ class MessageModel {
         const params = {
             TableName: TABLE_NAME,
             KeyConditionExpression: "conversation_id = :conversationId",
-            FilterExpression: "is_deleted = :is_deleted",
             ExpressionAttributeValues: {
                 ":conversationId": conversationId,
-                ":is_deleted": false,
             },
             Limit: limit,
-            ScanIndexForward: false, // des descending (newest first)
+            ScanIndexForward: false, // newest first
             ExclusiveStartKey: cursor,
         };
 
         const result = await dynamodb.query(params).promise();
+        const rawMessages = result.Items || [];
+        
+        console.log(`[LOAD MESSAGES] DB query returned ${rawMessages.length} raw messages for ${conversationId}`);
 
-        // Filter out messages that have been deleted by this user
-        let messages = result.Items || [];
-        if (userId) {
-            messages = messages.filter((msg) => {
-                const deletedBy = msg.deleted_by || [];
-                return !deletedBy.includes(userId);
-            });
-        }
+        // Post-process messages:
+        // 1. Filter out messages deleted for ME (using deleted_by set)
+        // 2. Filter out messages created before deletedAt
+        // 3. Add flags for recalled/deleted for everyone
 
-        // Filter out messages created before user deleted the conversation
-        if (deletedAt) {
-            messages = messages.filter((msg) => new Date(msg.created_at) > new Date(deletedAt));
-        }
+        let filteredMessages = rawMessages.filter((msg) => {
+            // Task 2: Filter out messages deleted ONLY for current user
+            if (userId) {
+                const deletedBy = msg.deleted_by;
+                if (deletedBy) {
+                    // Handle various DynamoDB Set formats
+                    let isDeletedForMe = false;
+                    if (Array.isArray(deletedBy)) {
+                        isDeletedForMe = deletedBy.includes(userId);
+                    } else if (typeof deletedBy.has === 'function') {
+                        isDeletedForMe = deletedBy.has(userId);
+                    } else if (deletedBy.values && Array.isArray(deletedBy.values)) {
+                        isDeletedForMe = deletedBy.values.includes(userId);
+                    } else if (typeof deletedBy === 'object' && !Array.isArray(deletedBy)) {
+                        // Sometimes DynamoDB returns a set as an object with values
+                        const values = deletedBy.values || Object.values(deletedBy);
+                        isDeletedForMe = values.includes(userId);
+                    }
+
+                    if (isDeletedForMe) return false;
+                }
+            }
+
+            // Filter out messages created before user deleted the conversation
+            if (deletedAt && new Date(msg.created_at) <= new Date(deletedAt)) {
+                return false;
+            }
+
+            return true;
+        });
+
+        console.log(`[LOAD MESSAGES] After filtering: ${filteredMessages.length} messages remaining`);
+
+        // Task 3 & 4: Add flags and mask content for recalled/deleted for everyone
+        const messages = filteredMessages.map(msg => {
+            const transformed = { 
+                ...msg,
+                messageId: msg.message_id,
+                conversationId: msg.conversation_id,
+                senderId: msg.sender_id,
+                createdAt: msg.created_at,
+                updatedAt: msg.updated_at
+            };
+
+            // Normalize fields for frontend
+            if (msg.is_deleted) {
+                transformed.isDeletedForEveryone = true;
+                transformed.content = "This message was deleted";
+                transformed.attachments = [];
+                transformed.type = "text";
+            }
+
+            if (msg.is_recalled) {
+                transformed.isRecalled = true;
+                transformed.content = "This message was recalled";
+                transformed.attachments = [];
+                transformed.type = "text";
+            }
+
+            return transformed;
+        });
 
         return {
             messages,
@@ -261,6 +315,27 @@ class MessageModel {
 
         const result = await dynamodb.query(params).promise();
         return result.Count;
+    }
+
+    /**
+     * Check if user has ever sent a message in this conversation.
+     * Used for membership repair logic.
+     */
+    static async hasUserSentMessages(conversationId, userId) {
+        const params = {
+            TableName: TABLE_NAME,
+            KeyConditionExpression: "conversation_id = :conversationId",
+            FilterExpression: "sender_id = :userId",
+            ExpressionAttributeValues: {
+                ":conversationId": conversationId,
+                ":userId": userId,
+            },
+            Limit: 1,
+            Select: "COUNT",
+        };
+
+        const result = await dynamodb.query(params).promise();
+        return result.Count > 0;
     }
 }
 
