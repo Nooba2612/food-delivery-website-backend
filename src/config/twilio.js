@@ -15,29 +15,11 @@ if (accountSid && authToken && !accountSid.includes("dummy") && !authToken.inclu
     }
 }
 
-/**
- * Format phone number to E.164
- * @param {string} phoneNumber - Raw phone number
- * @returns {string} - Formatted phone number
- */
-const formatE164 = (phoneNumber) => {
-    let cleaned = phoneNumber.replace(/\D/g, "");
-    
-    // If it starts with 0 and is likely a Vietnam number (10 digits)
-    if (cleaned.startsWith("0") && cleaned.length === 10) {
-        return "+84" + cleaned.substring(1);
-    }
-    
-    // If it doesn't have a +, add one (assuming it's already international or has country code)
-    if (!phoneNumber.startsWith("+")) {
-        return "+" + cleaned;
-    }
-    
-    return "+" + cleaned;
-};
+const { formatPhoneNumber } = require("../helpers/phoneHelper");
 
 const createVerification = async (phoneNumber, otp, type = "verification") => {
-    const formattedPhone = formatE164(phoneNumber);
+    // formatPhoneNumber is idempotent (+84XXXXXXXXX)
+    const formattedPhone = formatPhoneNumber(phoneNumber);
     console.log(`[Twilio] Attempting to send OTP to ${formattedPhone}`);
 
     if (!client) {
@@ -73,6 +55,6 @@ const createVerification = async (phoneNumber, otp, type = "verification") => {
     }
 };
 
-module.exports = { createVerification, formatE164 };
+module.exports = { createVerification };
 
 

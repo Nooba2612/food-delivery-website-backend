@@ -18,28 +18,32 @@ const {
 const { generateJWT, generateTokens } = require("@helpers/jwtHelper");
 const { regexVietnamPhoneNumber, regexEmail } = require("@constants/constants");
 const { sendEmail } = require("@config/nodemailer");
+const { normalizePhone, getPhoneDigits, formatPhoneNumber } = require("@helpers/phoneHelper");
 
 class authController {
   async sendOTP(req, res) {
     try {
-      const { phone, country, countryCode: bodyCountryCode, resendOTP } = req.body;
+      let { phone, country, countryCode: bodyCountryCode, resendOTP } = req.body;
       const countryCode = bodyCountryCode || (country?.countryCode);
 
       if (!phone || !countryCode) {
-        res.status(400).json({ success: false, message: "Failed to send OTP" });
+        return res.status(400).json({ success: false, message: "Failed to send OTP" });
       }
+
+      phone = getPhoneDigits(phone); // Always store 9 digits in DB
 
       if (resendOTP) {
         await deleteOTP(countryCode, phone);
       }
 
       const otp = generateOTP();
-      console.log(`[OTP] Generated for ${countryCode}${phone}: ${otp}`);
+      const formattedPhone = formatPhoneNumber(phone); // +84XXXXXXXXX
+      console.log(`[OTP] Generated for ${formattedPhone}: ${otp}`);
 
       await saveOTP(countryCode, phone, otp);
-      console.log(`[OTP] Saved to database for ${countryCode}${phone}`);
+      console.log(`[OTP] Saved to database for ${phone}`);
 
-      const twilioResult = await createVerification(countryCode + phone, otp, "verification");
+      const twilioResult = await createVerification(formattedPhone, otp, "verification");
 
       if (!twilioResult.success) {
         // If it's a configuration issue (dummy credentials), we might still want fallback in dev
@@ -52,11 +56,11 @@ class authController {
             });
         }
         
-        console.error(`[Twilio] SMS Delivery Failed for ${countryCode}${phone}:`, twilioResult.error);
+        console.error(`[Twilio] SMS Delivery Failed for ${formattedPhone}:`, twilioResult.error);
         return res.status(400).json({ success: false, message: "Failed to send OTP SMS" });
       }
 
-      console.log(`[Twilio] SMS Sent Successfully to ${countryCode}${phone}`);
+      console.log(`[Twilio] SMS Sent Successfully to ${formattedPhone}`);
       res.status(200).json({ success: true, message: "OTP sent successfully" });
     } catch (error) {
       console.log(error);
@@ -68,7 +72,7 @@ class authController {
 
   async verifyOTP(req, res) {
     try {
-      const { otp, phone, country, countryCode: bodyCountryCode } = req.body;
+      let { otp, phone, country, countryCode: bodyCountryCode } = req.body;
       const countryCode = bodyCountryCode || (country?.countryCode);
 
       if (!otp || !phone || !countryCode) {
@@ -76,6 +80,8 @@ class authController {
           .status(400)
           .json({ success: false, message: "Missing required fields" });
       }
+
+      phone = getPhoneDigits(phone);
 
       const user = await getUserByPhoneNumber(countryCode, phone);
 
@@ -103,8 +109,9 @@ class authController {
 
   async loginUser(req, res) {
     try {
-      const {
+      let {
         phone,
+        email,
         countryCode: bodyCountryCode,
         password,
         memorizedLogin,
@@ -112,27 +119,43 @@ class authController {
       } = req.body;
       const countryCode = bodyCountryCode || (country && country.countryCode);
 
-      console.log("BODY:", req.body); // ✅ debug xem Postman gửi gì lên
-
-      if (!phone || !countryCode || !password) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Missing required fields" });
+      if (phone && countryCode) {
+        phone = getPhoneDigits(phone);
       }
 
-      const user = await getUserByPhoneNumber(countryCode, phone);
-      console.log("USER:", user);
+      console.log("LOGIN ATTEMPT:", { phone, email, countryCode });
+
+      if ((!phone || !countryCode) && !email) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Vui lòng nhập số điện thoại hoặc email" });
+      }
+
+      if (!password) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Vui lòng nhập mật khẩu" });
+      }
+
+      let user;
+      if (phone && countryCode) {
+        user = await getUserByPhoneNumber(countryCode, phone);
+      } else if (email) {
+        user = await getUserByEmail(email);
+      }
+
+      console.log("USER FOUND:", user ? user.user_id : "None");
 
       if (!user) {
         return res
           .status(404)
-          .json({ success: false, message: "User not found" });
+          .json({ success: false, message: "Tài khoản không tồn tại" });
       }
 
       const isValidPassword = await compareHashedData(password, user.password);
 
       if (!isValidPassword) {
-        return res.json({ success: false, message: "Login user failed" });
+        return res.status(401).json({ success: false, message: "Mật khẩu không chính xác" });
       }
 
       const jwtExpiresIn =
@@ -151,7 +174,7 @@ class authController {
 
       return res.status(200).json({
         success: true,
-        message: "User login successfully",
+        message: "Đăng nhập thành công",
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         user: user,
@@ -169,7 +192,7 @@ class authController {
 
   async registerUser(req, res) {
     try {
-      const {
+      let {
         username,
         phone,
         countryCode: bodyCountryCode,
@@ -178,6 +201,10 @@ class authController {
         country,
       } = req.body;
       const countryCode = bodyCountryCode || (country && country.countryCode);
+
+      if (phone && countryCode) {
+        phone = getPhoneDigits(phone);
+      }
 
       console.log("BODY:", req.body); // debug
 
@@ -282,7 +309,7 @@ class authController {
   }
 
   async forgotPasswordSendOTP(req, res) {
-    const { info, countryCode, resendOTP } = req.body;
+    let { info, countryCode, resendOTP } = req.body;
     const otp = generateOTP();
 
     if (!info) {
@@ -296,12 +323,14 @@ class authController {
 
     if (info && regexVietnamPhoneNumber.test(info)) {
       try {
-        console.log(`[OTP] Generated Reset OTP for ${countryCode}${info}: ${otp}`);
+        const rawPhone = getPhoneDigits(info);
+        const formattedPhone = formatPhoneNumber(info);
+        console.log(`[OTP] Generated Reset OTP for ${formattedPhone}: ${otp}`);
 
-        await saveOTP(countryCode, info, otp);
-        console.log(`[OTP] Saved Reset OTP to database for ${countryCode}${info}`);
+        await saveOTP(countryCode, rawPhone, otp);
+        console.log(`[OTP] Saved Reset OTP to database for ${rawPhone}`);
 
-        const twilioResult = await createVerification(countryCode + info, otp, "reset");
+        const twilioResult = await createVerification(formattedPhone, otp, "reset");
 
         if (!twilioResult.success) {
           if (twilioResult.error === "Twilio misconfigured" && process.env.NODE_ENV !== "production") {
@@ -313,11 +342,11 @@ class authController {
               });
           }
           
-          console.error(`[Twilio] Reset SMS Delivery Failed for ${countryCode}${info}:`, twilioResult.error);
+          console.error(`[Twilio] Reset SMS Delivery Failed for ${formattedPhone}:`, twilioResult.error);
           return res.status(400).json({ success: false, message: "Failed to send OTP SMS" });
         }
 
-        console.log(`[Twilio] Reset SMS Sent Successfully to ${countryCode}${info}`);
+        console.log(`[Twilio] Reset SMS Sent Successfully to ${formattedPhone}`);
         return res.status(200).json({ success: true, message: "OTP sent successfully" });
       } catch (error) {
         console.error("Send otp to phone number failed:", error);
@@ -349,9 +378,8 @@ class authController {
 
   async forgotPasswordVerifyOTP(req, res) {
     try {
-      const { otp, info } = req.body;
-      console.log(otp);
-      console.log(info);
+      let { otp, info, countryCode: bodyCountryCode } = req.body;
+      const countryCode = bodyCountryCode || "+84";
 
       if (!otp || !info) {
         return res
@@ -359,7 +387,11 @@ class authController {
           .json({ success: false, message: "Missing required fields" });
       }
 
-      const isValidOTP = await checkOTP("+84", info, otp);
+      if (info && !info.includes("@")) {
+        info = getPhoneDigits(info);
+      }
+
+      const isValidOTP = await checkOTP(countryCode, info, otp);
 
       console.log("🚀  isValidOTP:", isValidOTP);
 
@@ -381,7 +413,8 @@ class authController {
   }
 
   async resetPassword(req, res) {
-    const { newPassword, info } = req.body;
+    let { newPassword, info, countryCode: bodyCountryCode } = req.body;
+    const countryCode = bodyCountryCode || "+84";
     let user;
 
     if (!newPassword || !info) {
@@ -395,7 +428,8 @@ class authController {
     }
 
     if (regexVietnamPhoneNumber.test(info)) {
-      user = await getUserByPhoneNumber("+84", info);
+      info = getPhoneDigits(info);
+      user = await getUserByPhoneNumber(countryCode, info);
     }
 
     if (!user) {
