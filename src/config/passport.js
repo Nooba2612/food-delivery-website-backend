@@ -47,48 +47,52 @@ const usePassportGoogleStrategy = (passport) => {
     const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET_ID;
     const googleRedirectUrl = process.env.GOOGLE_REDIRECT_LOGIN;
 
-    passport.use(
-        new GoogleStrategy(
-            {
-                clientID: googleClientID,
-                clientSecret: googleClientSecret,
-                callbackURL: googleRedirectUrl,
-                passReqToCallback: true,
-            },
-            async (req, accessToken, refreshToken, profile, cb) => {
-                try {
-                    console.log("\n\nProfile: ", profile._json);
+    if (googleClientID && googleClientSecret && !googleClientID.includes("dummy") && !googleClientSecret.includes("dummy")) {
+        passport.use(
+            new GoogleStrategy(
+                {
+                    clientID: googleClientID,
+                    clientSecret: googleClientSecret,
+                    callbackURL: googleRedirectUrl,
+                    passReqToCallback: true,
+                },
+                async (req, accessToken, refreshToken, profile, cb) => {
+                    try {
+                        console.log("\n\nProfile: ", profile._json);
 
-                    const { sub, name, picture, email } = profile._json;
+                        const { sub, name, picture, email } = profile._json;
 
-                    // save user in database
-                    const [user, created] = await userModel.findOrCreate({
-                        where: { userId: sub },
-                        defaults: {
-                            userId: sub,
-                            fullname: name,
-                            username: name,
-                            email: email,
-                            avatarPath: picture,
-                            typeLogin: "Google",
-                            password: "*",
-                            countryCode: "*",
-                            phoneNumber: uuidv4().substring(0, 20),
-                        },
-                    });
+                        // save user in database
+                        const [user, created] = await userModel.findOrCreate({
+                            where: { userId: sub },
+                            defaults: {
+                                userId: sub,
+                                fullname: name,
+                                username: name,
+                                email: email,
+                                avatarPath: picture,
+                                typeLogin: "Google",
+                                password: "*",
+                                countryCode: "*",
+                                phoneNumber: uuidv4().substring(0, 20),
+                            },
+                        });
 
-                    if (created) {
-                        console.log("\n\nNew user created: ", user);
-                    } else {
-                        console.log("\n\nUser found: ", user);
+                        if (created) {
+                            console.log("\n\nNew user created: ", user);
+                        } else {
+                            console.log("\n\nUser found: ", user);
+                        }
+                        return cb(null, user);
+                    } catch (error) {
+                        return cb(error);
                     }
-                    return cb(null, user);
-                } catch (error) {
-                    return cb(error);
-                }
-            },
-        ),
-    );
+                },
+            ),
+        );
+    } else {
+        console.warn("Google OAuth credentials missing or invalid. Google login will be disabled.");
+    }
 };
 
 const usePassportFacebookStrategy = (passport) => {
@@ -96,52 +100,57 @@ const usePassportFacebookStrategy = (passport) => {
     const facebookClientSecret = process.env.FACEBOOK_APP_SECRET_ID;
     const facebookRedirectUrl = process.env.FACEBOOK_REDIRECT_LOGIN;
 
-    passport.use(
-        new FacebookStrategy(
-            {
-                clientID: facebookClientID,
-                clientSecret: facebookClientSecret,
-                callbackURL: facebookRedirectUrl,
-                profileFields: ["id", "displayName", "photos", "email"],
-                enableProof: true,
-                passReqToCallback: true,
-            },
-            async (req, accessToken, refreshToken, profile, cb) => {
-                try {
-                    console.log("\n\nProfile: ", profile._json);
-                    const { id, name, picture, email } = profile._json;
+    if (facebookClientID && facebookClientSecret && !facebookClientID.includes("dummy") && !facebookClientSecret.includes("dummy")) {
+        passport.use(
+            new FacebookStrategy(
+                {
+                    clientID: facebookClientID,
+                    clientSecret: facebookClientSecret,
+                    callbackURL: facebookRedirectUrl,
+                    profileFields: ["id", "displayName", "photos", "email"],
+                    enableProof: true,
+                    passReqToCallback: true,
+                },
+                async (req, accessToken, refreshToken, profile, cb) => {
+                    try {
+                        console.log("\n\nProfile: ", profile._json);
+                        const { id, name, picture, email } = profile._json;
 
-                    const hashedEmail = await hashData(email);
+                        const hashedEmail = await hashData(email);
 
-                    // save user in database
-                    const [user, created] = await userModel.findOrCreate({
-                        where: { userId: id },
-                        defaults: {
-                            userId: id,
-                            fullname: name,
-                            username: name,
-                            email: hashedEmail,
-                            avatarPath: picture.data.url,
-                            typeLogin: "Facebook",
-                            password: "*",
-                            countryCode: "*",
-                            phoneNumber: uuidv4().substring(0, 20),
-                        },
-                    });
+                        // save user in database
+                        const [user, created] = await userModel.findOrCreate({
+                            where: { userId: id },
+                            defaults: {
+                                userId: id,
+                                fullname: name,
+                                username: name,
+                                email: hashedEmail,
+                                avatarPath: picture.data.url,
+                                typeLogin: "Facebook",
+                                password: "*",
+                                countryCode: "*",
+                                phoneNumber: uuidv4().substring(0, 20),
+                            },
+                        });
 
-                    if (created) {
-                        console.log("\n\nNew user created: ", user);
-                    } else {
-                        console.log("\n\nUser found: ", user);
+                        if (created) {
+                            console.log("\n\nNew user created: ", user);
+                        } else {
+                            console.log("\n\nUser found: ", user);
+                        }
+                        return cb(null, user);
+                    } catch (error) {
+                        return cb(error);
                     }
-                    return cb(null, user);
-                } catch (error) {
-                    return cb(error);
-                }
-            },
-        ),
-    );
+                },
+            ),
+        );
+    } else {
+        console.warn("Facebook OAuth credentials missing or invalid. Facebook login will be disabled.");
+    }
 };
+
 
 const setupPassportSerialization = (passport) => {
     passport.serializeUser((user, done) => {

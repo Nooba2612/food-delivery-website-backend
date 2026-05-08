@@ -28,15 +28,24 @@ const refreshOTP = async () => {
     }
 };
 
+const { normalizePhone, getPhoneDigits } = require("@helpers/phoneHelper");
+
 const saveOTP = async (countryCode, info, otp) => {
     const expirationTime = new Date();
     expirationTime.setMinutes(expirationTime.getMinutes() + 10);
     const otpId = uuidv4();
+    
+    // Use 9 digits for info if it's a phone number (not an email)
+    let infoToStore = info;
+    if (countryCode && info && !info.includes("@")) {
+        infoToStore = getPhoneDigits(info);
+    }
+    
     try {
         await otpModel.create({
             otp_id: otpId,
             country_code: countryCode || "",
-            info: info,
+            info: infoToStore,
             otp: otp,
             expires_at: expirationTime,
         });
@@ -46,19 +55,25 @@ const saveOTP = async (countryCode, info, otp) => {
 };
 
 const checkOTP = async (countryCode, info, otp) => {
+    // Use 9 digits for info if it's a phone number (not an email)
+    let infoToSearch = info;
+    if (countryCode && info && !info.includes("@")) {
+        infoToSearch = getPhoneDigits(info);
+    }
+
     try {
         let otpEntry = await otpModel.findOne({
             where: {
                 country_code: {
                     [Op.or]: ["", countryCode],
                 },
-                info: info,
+                info: infoToSearch,
             },
             order: [["expires_at", "DESC"]],
         });
 
         if (!otpEntry) {
-            console.log("No OTP found");
+            console.log("No OTP found for", infoToSearch);
             return false; // No OTP found
         }
 
@@ -86,15 +101,21 @@ const checkOTP = async (countryCode, info, otp) => {
 };
 
 const deleteOTP = async (countryCode, info) => {
+    // Use 9 digits for info if it's a phone number (not an email)
+    let infoToDelete = info;
+    if (countryCode && info && !info.includes("@")) {
+        infoToDelete = getPhoneDigits(info);
+    }
+
     try {
         const result = await otpModel.destroy({
-            where: { country_code: countryCode, info: info },
+            where: { country_code: countryCode, info: infoToDelete },
         });
 
         if (result > 0) {
-            console.log("OTP deleted for info:", info);
+            console.log("OTP deleted for info:", infoToDelete);
         } else {
-            console.log("No OTP found for info:", info);
+            console.log("No OTP found for info:", infoToDelete);
         }
     } catch (error) {
         console.error("Error deleting OTP:", error);

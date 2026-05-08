@@ -1,5 +1,9 @@
 const socketIO = require("socket.io");
 const jwt = require("jsonwebtoken");
+const CallModel = require("@models/callModel");
+const ChatService = require("@services/chatService");
+const ConversationParticipantModel = require("@models/ConversationParticipantModel");
+const { getUserById } = require("@services/userService");
 
 // Store active user connections
 // Format: { userId: { socketId: socket, conversationIds: [...] } }
@@ -99,46 +103,120 @@ const initializeWebSocket = (server) => {
         // ===== CALL HANDLERS =====
 
         // Initiate call
-        socket.on("call_user", (data) => {
+        socket.on("call_user", async (data) => {
             const { callId, recipientId, callType, conversationId } = data;
             const recipientRoom = `user:${recipientId}`;
 
             console.log(`📞 Call initiated from ${userId} to ${recipientId} (${callType})`);
 
+            // Fetch fresh user data to get full name and avatar
+            const initiator = await getUserById(userId);
+            const callerName = initiator?.fullname || initiator?.username || socket.user?.username || "Unknown";
+            const callerAvatar = initiator?.avatarPath || initiator?.avatar_path || socket.user?.avatar || null;
+
             io.to(recipientRoom).emit("incoming_call", {
                 callId,
                 callerId: userId,
-                callerName: socket.user?.full_name || "Unknown",
-                callerAvatar: socket.user?.avatar || null,
+                callerName,
+                callerAvatar,
                 callType,
                 conversationId,
                 timestamp: new Date().toISOString(),
             });
         });
 
+        // Initiate group call
+        socket.on("group_call_initiated", async (data) => {
+            const { callId, conversationId, callType, initiatorId, participantIds } = data;
+            const effectiveInitiatorId = initiatorId || userId;
+
+            console.log(`📞 Group call initiated from ${effectiveInitiatorId} to ${participantIds?.length || 0} participants`);
+
+            // Fetch fresh user data to get full name and avatar
+            const initiator = await getUserById(effectiveInitiatorId);
+            const callerName = initiator?.fullname || initiator?.username || socket.user?.username || "Unknown";
+            const callerAvatar = initiator?.avatarPath || initiator?.avatar_path || socket.user?.avatar || null;
+
+            if (Array.isArray(participantIds)) {
+                participantIds.forEach(participantId => {
+                    if (participantId !== effectiveInitiatorId) {
+                        const recipientRoom = `user:${participantId}`;
+                        io.to(recipientRoom).emit("incoming_call", {
+                            callId,
+                            callerId: effectiveInitiatorId,
+                            callerName,
+                            callerAvatar,
+                            callType,
+                            conversationId,
+                            isGroupCall: true,
+                            participantIds,
+                            timestamp: new Date().toISOString(),
+                        });
+                    }
+                });
+            }
+        });
+
         // Accept call
-        socket.on("accept_call", (data) => {
-            const { callId, callerId } = data;
+        socket.on("accept_call", async (data) => {
+            const { callId, callerId, conversationId } = data;
             const callerRoom = `user:${callerId}`;
 
-            console.log(`✅ Call accepted: ${callId} by user ${userId}`);
+            console.log(`✅ Call accepted: ${callId} by user ${userId} in conversation ${conversationId || "none"}`);
 
-            io.to(callerRoom).emit("call_accepted", {
+            // Fetch fresh user data to get full name and avatar
+            const recipient = await getUserById(userId);
+            const recipientName = recipient?.fullname || recipient?.username || socket.user?.username || "Unknown";
+            const recipientAvatar = recipient?.avatarPath || recipient?.avatar_path || socket.user?.avatar || null;
+
+            const acceptancePayload = {
                 callId,
                 recipientId: userId,
                 recipientSocketId: socket.id,
-                recipientName: socket.user?.full_name || "Unknown",
-                recipientAvatar: socket.user?.avatar || null,
+                recipientName,
+                recipientAvatar,
                 timestamp: new Date().toISOString(),
-            });
+                conversationId,
+            };
+
+            // If it's a group call, broadcast to the entire group
+            if (conversationId) {
+                try {
+                    const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+                    members.forEach((member) => {
+                        // Notify everyone including the initiator
+                        io.to(`user:${member.user_id}`).emit("call_accepted", acceptancePayload);
+                    });
+                    console.log(`✅ Broadcasted call_accepted to ${members.length} group members`);
+                } catch (error) {
+                    console.error("❌ Error broadcasting call_accepted to group:", error.message);
+                    // Fallback to initiator only
+                    io.to(callerRoom).emit("call_accepted", acceptancePayload);
+                }
+            } else {
+                // For 1-on-1, notify initiator
+                io.to(callerRoom).emit("call_accepted", acceptancePayload);
+            }
         });
 
         // Reject call
-        socket.on("reject_call", (data) => {
+        socket.on("reject_call", async (data) => {
             const { callId, callerId, reason } = data;
             const callerRoom = `user:${callerId}`;
 
             console.log(`❌ Call rejected: ${callId} by user ${userId} (Reason: ${reason})`);
+
+            // Update call status to "rejected"
+            try {
+                if (callId) {
+                    await CallModel.update(callId, {
+                        status: "rejected",
+                    });
+                    console.log(`✅ Call status updated to rejected: ${callId}`);
+                }
+            } catch (error) {
+                console.error(`❌ Failed to update call status: ${error.message}`);
+            }
 
             io.to(callerRoom).emit("call_rejected", {
                 callId,
@@ -147,98 +225,420 @@ const initializeWebSocket = (server) => {
             });
         });
 
+        // Backup event name for reject call
+        socket.on("call_rejected", async (data) => {
+            const { callId, toUserId, recipientId, reason } = data;
+            const targetUserId = toUserId || recipientId;
+            const callerRoom = `user:${targetUserId}`;
+
+            console.log(`❌ Call rejected (backup): ${callId} by user ${userId}, target: ${targetUserId}`);
+
+            // Update call status to "rejected"
+            try {
+                if (callId) {
+                    await CallModel.update(callId, {
+                        status: "rejected",
+                    });
+                    console.log(`✅ Call status updated to rejected: ${callId}`);
+                }
+            } catch (error) {
+                console.error(`❌ Failed to update call status: ${error.message}`);
+            }
+
+            if (targetUserId) {
+                io.to(callerRoom).emit("call_rejected", {
+                    callId,
+                    reason: reason || "user_declined",
+                    timestamp: new Date().toISOString(),
+                });
+            }
+        });
+
+        // Cancel call (caller cancels before recipient accepts)
+        socket.on("cancel_call", async (data) => {
+            const { callId, toUserId } = data;
+            const recipientRoom = `user:${toUserId}`;
+
+            console.log(`🚫 Call cancelled: ${callId} by caller ${userId}, recipient: ${toUserId}`);
+
+            // Update call status to "cancelled"
+            try {
+                await CallModel.update(callId, {
+                    status: "cancelled",
+                });
+                console.log(`✅ Call status updated to cancelled: ${callId}`);
+            } catch (error) {
+                console.error(`❌ Failed to update call status: ${error.message}`);
+            }
+
+            // Emit to recipient or conversation room members
+            const conversationId = data.conversationId;
+            if (conversationId) {
+                try {
+                    const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+                    members.forEach((member) => {
+                        if (member.user_id !== userId) {
+                            io.to(`user:${member.user_id}`).emit("call_cancelled", {
+                                callId,
+                                reason: "Call cancelled",
+                                timestamp: new Date().toISOString(),
+                            });
+                        }
+                    });
+                    console.log(`🚫 Broadcasted call_cancelled to ${members.length} members of group ${conversationId}`);
+                } catch (error) {
+                    console.error("❌ Error broadcasting call_cancelled to group:", error.message);
+                }
+            } else {
+                io.to(recipientRoom).emit("call_cancelled", {
+                    callId,
+                    reason: "Caller cancelled",
+                    timestamp: new Date().toISOString(),
+                });
+            }
+        });
+
+        // Backup event name for cancel call
+        socket.on("call_cancelled", async (data) => {
+            const { callId, toUserId } = data;
+            const recipientRoom = `user:${toUserId}`;
+
+            console.log(`🚫 Call cancelled (backup): ${callId} by caller ${userId}, recipient: ${toUserId}`);
+
+            // Update call status to "cancelled"
+            try {
+                await CallModel.update(callId, {
+                    status: "cancelled",
+                });
+                console.log(`✅ Call status updated to cancelled: ${callId}`);
+            } catch (error) {
+                console.error(`❌ Failed to update call status: ${error.message}`);
+            }
+
+            // Emit to recipient or conversation room
+            const conversationId = data.conversationId;
+            if (conversationId) {
+                const groupRoom = `conversation_${conversationId}`;
+                console.log(`🚫 Broadcasting call_cancelled to group: ${groupRoom}`);
+                io.to(groupRoom).emit("call_cancelled", {
+                    callId,
+                    reason: "Call cancelled",
+                    timestamp: new Date().toISOString(),
+                });
+            } else {
+                io.to(recipientRoom).emit("call_cancelled", {
+                    callId,
+                    reason: "Caller cancelled",
+                    timestamp: new Date().toISOString(),
+                });
+            }
+        });
+
         // End call
-        socket.on("end_call", (data) => {
-            const { callId, recipientId, duration } = data;
-            const recipientRoom = `user:${recipientId}`;
-
-            console.log(`⏹️  Call ended: ${callId} - Duration: ${duration}s`);
-
-            io.to(recipientRoom).emit("call_ended", {
-                callId,
-                duration,
-                timestamp: new Date().toISOString(),
+        socket.on("end_call", async (data) => {
+            console.log(`📥 end_call received:`, {
+                callId: data.callId,
+                callIdType: typeof data.callId,
+                hasRecipientId: !!data.recipientId,
+                hasToUserId: !!data.toUserId,
+                duration: data.duration,
             });
+
+            const { callId, recipientId, toUserId, duration, conversationId } = data;
+            let targetUserId = recipientId || toUserId;
+
+            // If recipientId not provided, look up from call record
+            if (!targetUserId && callId && typeof callId === "string" && callId.trim().length > 0) {
+                try {
+                    console.log(`🔍 Looking up call for end_call: ${callId}`);
+                    const call = await CallModel.findById(callId);
+                    if (call) {
+                        targetUserId = userId === call.initiator_id ? call.recipient_id : call.initiator_id;
+                        console.log(`📞 Resolved recipientId from callId for end_call: ${targetUserId}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Failed to lookup call ${callId}:`, error.message);
+                }
+            }
+
+            const recipientRoom = `user:${targetUserId}`;
+
+            console.log(`⏹️  Call ended: ${callId || "unknown"} - Duration: ${duration}s, Recipient: ${targetUserId}`);
+
+            if (conversationId) {
+                try {
+                    const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+                    members.forEach((member) => {
+                        if (member.user_id !== userId) {
+                            io.to(`user:${member.user_id}`).emit("call_ended", {
+                                callId,
+                                duration,
+                                timestamp: new Date().toISOString(),
+                            });
+                        }
+                    });
+                    console.log(`⏹️  Broadcasted call_ended to ${members.length} members of group ${conversationId}`);
+                } catch (error) {
+                    console.error("❌ Error broadcasting call_ended to group:", error.message);
+                }
+            } else if (targetUserId) {
+                io.to(recipientRoom).emit("call_ended", {
+                    callId,
+                    duration,
+                    timestamp: new Date().toISOString(),
+                });
+            } else {
+                console.warn(`⚠️  end_call: Cannot emit - Missing target or invalid callId`, {
+                    targetUserId,
+                    callId,
+                    callIdType: typeof callId,
+                });
+            }
+        });
+
+        // Save call message (sent by frontend when call ends or is rejected)
+        socket.on("save_call_message", async (data) => {
+            const { conversationId, content, type, callData } = data;
+            console.log(`💬 [save_call_message] Saving call message for conversation ${conversationId}`);
+
+            try {
+                // 1. Save to database using ChatService
+                const message = await ChatService.sendMessage(userId, conversationId, {
+                    content,
+                    type: type || "system_call",
+                    callData
+                });
+
+                // 2. Broadcast new message to conversation room
+                const roomName = `conversation_${conversationId}`;
+                io.to(roomName).emit("new_message", {
+                    ...message,
+                    timestamp: new Date().toISOString()
+                });
+
+                // 3. Emit conversation update to all members for sidebar refresh
+                const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+                
+                for (const member of members) {
+                    // Update unread count for everyone except the sender
+                    // Note: ChatService already updated unread counts in DB
+                    io.to(`user:${member.user_id}`).emit("conversation_updated", {
+                        conversationId,
+                        lastMessage: {
+                            messageId: message.messageId,
+                            content: message.content,
+                            type: message.type,
+                            senderName: message.senderName,
+                            senderAvatar: message.senderAvatar,
+                            createdAt: message.createdAt
+                        },
+                        lastMessageTimestamp: message.createdAt,
+                        lastMessageId: message.messageId,
+                        unreadCount: member.user_id !== userId ? (member.unread_count || 0) : 0,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+
+                console.log(`✅ [save_call_message] Call message saved and broadcasted`);
+            } catch (error) {
+                console.error(`❌ [save_call_message] Error:`, error.message);
+            }
         });
 
         // WebRTC Signaling - Send offer
-        socket.on("offer", (data) => {
-            const { callId, recipientId, offer } = data;
-            const recipientRoom = `user:${recipientId}`;
-
-            console.log(`📡 Offer received for call: ${callId}`);
-
-            io.to(recipientRoom).emit("offer", {
-                callId,
-                callerId: userId,
-                offer,
-                timestamp: new Date().toISOString(),
+        socket.on("offer", async (data) => {
+            console.log(`�🔴🔴 [BACKEND-OFFER] OFFER RECEIVED 🔴🔴🔴`);
+            console.log(`📥 offer received:`, {
+                callId: data.callId,
+                hasRecipientId: !!data.recipientId,
+                hasToUserId: !!data.toUserId,
+                hasOffer: !!data.offer,
+                fromUserId: userId,
+                dataKeys: Object.keys(data),
+                fullData: data,
             });
+
+            const { callId, recipientId, toUserId, offer } = data;
+            console.log(
+                `🔴 [BACKEND-OFFER] Extracted values: recipientId=${recipientId}, toUserId=${toUserId}, callId=${callId}`,
+            );
+
+            let targetUserId = recipientId || toUserId;
+            console.log(`🔴 [BACKEND-OFFER] Initial targetUserId: ${targetUserId}`);
+
+            // If recipientId not provided, look up from call record
+            if (!targetUserId && callId && typeof callId === "string" && callId.trim().length > 0) {
+                console.log(`🔴 [BACKEND-OFFER] targetUserId is null, looking up call ${callId}`);
+                try {
+                    const call = await CallModel.findById(callId);
+                    if (call) {
+                        targetUserId = userId === call.initiator_id ? call.recipient_id : call.initiator_id;
+                        console.log(`📞 Resolved recipientId from callId: ${targetUserId}`);
+                    } else {
+                        console.warn(`⚠️  Call not found: ${callId}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Failed to lookup call ${callId}:`, error.message);
+                }
+            }
+
+            const recipientRoom = `user:${targetUserId}`;
+            console.log(`🔴 [BACKEND-OFFER] Will send to room: ${recipientRoom}`);
+            console.log(
+                `🔴 [BACKEND-OFFER] FINAL CHECK - targetUserId: ${targetUserId}, offer type: ${typeof offer}, offer keys: ${offer ? Object.keys(offer) : "null"}`,
+            );
+            console.log(`🔴 [BACKEND-OFFER] Offer object content:`, offer);
+
+            if (targetUserId && offer) {
+                io.to(recipientRoom).emit("offer", {
+                    callId,
+                    callerId: userId,
+                    offer,
+                    timestamp: new Date().toISOString(),
+                });
+                console.log(`✅✅✅ [BACKEND-OFFER] Offer forwarded to ${recipientRoom} for call: ${callId} ✅✅✅`);
+            } else {
+                console.warn(
+                    `⚠️⚠️⚠️ [BACKEND-OFFER] Cannot forward - Missing ${!targetUserId ? "targetUserId" : ""}${!offer ? " offer" : ""} ⚠️⚠️⚠️`,
+                    {
+                        targetUserId,
+                        hasOffer: !!offer,
+                        callId,
+                    },
+                );
+            }
         });
 
         // WebRTC Signaling - Send answer
-        socket.on("answer", (data) => {
-            const { callId, callerId, answer } = data;
-            const callerRoom = `user:${callerId}`;
-
-            console.log(`📡 Answer received for call: ${callId}`);
-
-            io.to(callerRoom).emit("answer", {
-                callId,
-                recipientId: userId,
-                answer,
-                timestamp: new Date().toISOString(),
+        socket.on("answer", async (data) => {
+            console.log(`�🔴 [BACKEND-ANSWER] ANSWER RECEIVED 🔴🔴🔴`);
+            console.log(`📥 answer received:`, {
+                callId: data.callId,
+                hasCallerId: !!data.callerId,
+                hasToUserId: !!data.toUserId,
+                hasAnswer: !!data.answer,
+                answerType: data.answer?.type,
+                hasAnswerSDP: !!data.answer?.sdp,
+                fromUserId: userId,
+                dataKeys: Object.keys(data),
+                fullData: data,
             });
+
+            const { callId, callerId, toUserId, answer } = data;
+            let targetUserId = callerId || toUserId;
+
+            console.log(
+                `🔴 [BACKEND-ANSWER] Extracted values: callerId=${callerId}, toUserId=${toUserId}, callId=${callId}`,
+            );
+            console.log(`🔴 [BACKEND-ANSWER] Initial targetUserId: ${targetUserId}`);
+
+            // If callerId not provided, look up from call record
+            if (!targetUserId && callId && typeof callId === "string" && callId.trim().length > 0) {
+                console.log(`🔴 [BACKEND-ANSWER] targetUserId is null, looking up call ${callId}`);
+                try {
+                    const call = await CallModel.findById(callId);
+                    if (call) {
+                        console.log(
+                            `🔴 [BACKEND-ANSWER] Call found - initiator_id: ${call.initiator_id}, recipient_id: ${call.recipient_id}, current userId: ${userId}`,
+                        );
+                        targetUserId = userId === call.recipient_id ? call.initiator_id : call.recipient_id;
+                        console.log(
+                            `📞 Resolved callerId from callId: ${targetUserId} (receiver was ${userId === call.recipient_id ? "recipient" : "initiator"})`,
+                        );
+                    } else {
+                        console.warn(`⚠️  Call not found: ${callId}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Failed to lookup call ${callId}:`, error.message);
+                }
+            }
+
+            const callerRoom = `user:${targetUserId}`;
+            console.log(`🔴 [BACKEND-ANSWER] Will send to room: ${callerRoom}`);
+            console.log(
+                `🔴 [BACKEND-ANSWER] FINAL CHECK - targetUserId: ${targetUserId}, answer type: ${typeof answer}, answer keys: ${answer ? Object.keys(answer) : "null"}`,
+            );
+            console.log(`🔴 [BACKEND-ANSWER] Answer object content:`, answer);
+
+            if (targetUserId && answer) {
+                io.to(callerRoom).emit("answer", {
+                    callId,
+                    recipientId: userId,
+                    answer,
+                    timestamp: new Date().toISOString(),
+                });
+                console.log(`✅✅✅ [BACKEND-ANSWER] Answer forwarded to ${callerRoom} for call: ${callId} ✅✅✅`);
+            } else {
+                console.warn(
+                    `⚠️⚠️⚠️ [BACKEND-ANSWER] Cannot forward - Missing ${!targetUserId ? "targetUserId" : ""}${!answer ? " answer" : ""} ⚠️⚠️⚠️`,
+                    {
+                        targetUserId,
+                        hasAnswer: !!answer,
+                        callId,
+                    },
+                );
+            }
         });
 
         // WebRTC Signaling - Send ICE candidate
-        socket.on("ice_candidate", (data) => {
-            const { callId, recipientId, candidate } = data;
-            const recipientRoom = `user:${recipientId}`;
-
-            console.log(`❄️  ICE candidate for call: ${callId}`);
-
-            io.to(recipientRoom).emit("ice_candidate", {
-                callId,
-                candidate,
-                timestamp: new Date().toISOString(),
-            });
-        });
-
-        // ===== SUPPORT CHAT HANDLERS (Customer ↔ Admin) =====
-        // Dùng prefix 'support:' để tách biệt khỏi hệ thống chat tổng quát
-
-        // Customer / Admin tham gia room của cuộc hội thoại hỗ trợ
-        socket.on("support:join", (conversationId) => {
-            const roomName = `support_conv_${conversationId}`;
-            socket.join(roomName);
-            console.log(`💬 [Support] User ${userId} joined support room: ${roomName}`);
-        });
-
-        // Rời khỏi room hỗ trợ
-        socket.on("support:leave", (conversationId) => {
-            const roomName = `support_conv_${conversationId}`;
-            socket.leave(roomName);
-            console.log(`💬 [Support] User ${userId} left support room: ${roomName}`);
-        });
-
-        // Trạng thái đang gõ phín (Typing indicator)
-        socket.on("support:typing", ({ conversationId }) => {
-            const roomName = `support_conv_${conversationId}`;
-            // emit tới tất cả thành viên trong room TỪ TRỪ socket hiện tại
-            socket.to(roomName).emit("support:display_typing", {
+        socket.on("ice_candidate", async (data) => {
+            console.log(`📥 ice_candidate received:`, {
+                dataKeys: Object.keys(data),
+                callId: data.callId, // Show actual value, not just truthy/falsy
+                hasCallId: !!data.callId,
+                callIdType: typeof data.callId,
+                hasRecipientId: !!data.recipientId,
+                hasToUserId: !!data.toUserId,
+                hasCandidate: !!data.candidate,
                 userId,
-                conversationId,
             });
-        });
 
-        // Dừng gõ phín
-        socket.on("support:stop_typing", ({ conversationId }) => {
-            const roomName = `support_conv_${conversationId}`;
-            socket.to(roomName).emit("support:hide_typing", {
-                userId,
-                conversationId,
-            });
+            const { callId, recipientId, toUserId, candidate } = data;
+            let targetUserId = recipientId || toUserId;
+
+            // If recipientId not provided AND callId is valid, look up from call record
+            if (!targetUserId && callId && typeof callId === "string" && callId.trim().length > 0) {
+                try {
+                    const call = await CallModel.findById(callId);
+
+                    if (call) {
+                        targetUserId = userId === call.initiator_id ? call.recipient_id : call.initiator_id;
+                        console.log(`📞 Resolved recipientId from callId: ${targetUserId}`);
+                    } else {
+                        console.warn(`⚠️  Call not found in database: ${callId}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Failed to lookup call ${callId}:`, error.message);
+                }
+            } else if (!targetUserId && !callId) {
+                console.error(`❌ CRITICAL: Neither recipientId/toUserId nor valid callId provided!`);
+                console.error(`   Frontend must send EITHER:`);
+                console.error(`   1. recipientId: "user_id"  OR`);
+                console.error(`   2. callId: "valid_uuid_string"`);
+            } else if (!targetUserId && callId === null) {
+                console.error(`❌ callId is null! Frontend should not send null values.`);
+                console.error(`   Either omit the field or send valid UUID string`);
+            }
+
+            const recipientRoom = `user:${targetUserId}`;
+
+            if (targetUserId && candidate) {
+                io.to(recipientRoom).emit("ice_candidate", {
+                    callId,
+                    candidate,
+                    timestamp: new Date().toISOString(),
+                });
+                console.log(`✅ ICE candidate forwarded to ${recipientRoom} for call: ${callId}`);
+            } else {
+                console.warn(
+                    `⚠️  ice_candidate: Cannot forward - Missing ${!targetUserId ? "targetUserId" : ""}${!candidate ? " candidate" : ""}`,
+                    {
+                        targetUserId,
+                        hasCandidate: !!candidate,
+                        callId,
+                    },
+                );
+            }
         });
 
         // Disconnect handler
@@ -426,6 +826,22 @@ const emitConversationUpdated = (io, conversationId, memberIds, conversationData
 };
 
 /**
+ * Emit new conversation (when a group is created)
+ * @param {SocketIO.Server} io - Socket.io server instance
+ * @param {Array} memberIds - Array of member user IDs
+ * @param {object} conversationData - The new conversation data
+ */
+const emitNewConversation = (io, memberIds, conversationData) => {
+    for (const memberId of memberIds) {
+        const userRoom = `user:${memberId}`;
+        io.to(userRoom).emit("new_conversation", {
+            ...conversationData,
+            timestamp: new Date().toISOString(),
+        });
+    }
+};
+
+/**
  * Get online users in conversation
  * @param {string} conversationId - Conversation ID
  * @returns {Array} Array of online user IDs
@@ -544,15 +960,29 @@ const emitICECandidate = (io, recipientId, candidateData) => {
 };
 
 /**
- * Emit order updated status
+ * Emit group disbanded
  * @param {SocketIO.Server} io - Socket.io server instance
- * @param {string} userId - User ID who owns the order
- * @param {object} orderData - Updated order data (order_id, status, etc.)
+ * @param {string} conversationId - Conversation ID
  */
-const emitOrderUpdated = (io, userId, orderData) => {
-    const userRoom = `user:${userId}`;
-    io.to(userRoom).emit("order_updated", {
-        ...orderData,
+const emitGroupDisbanded = (io, conversationId) => {
+    const roomName = `conversation_${conversationId}`;
+    io.to(roomName).emit("group_disbanded", {
+        conversationId,
+        timestamp: new Date().toISOString(),
+    });
+};
+
+/**
+ * Emit member role updated
+ * @param {SocketIO.Server} io - Socket.io server instance
+ * @param {string} conversationId - Conversation ID
+ * @param {object} data - Role update data { memberId, role }
+ */
+const emitMemberRoleUpdated = (io, conversationId, data) => {
+    const roomName = `conversation_${conversationId}`;
+    io.to(roomName).emit("member_role_updated", {
+        conversationId,
+        ...data,
         timestamp: new Date().toISOString(),
     });
 };
@@ -569,6 +999,8 @@ module.exports = {
     emitMemberAdded,
     emitMemberRemoved,
     emitConversationUpdated,
+    emitGroupDisbanded,
+    emitMemberRoleUpdated,
     getOnlineUsersInConversation,
     emitIncomingCall,
     emitCallAccepted,
@@ -577,5 +1009,5 @@ module.exports = {
     emitOffer,
     emitAnswer,
     emitICECandidate,
-    emitOrderUpdated,
+    emitNewConversation,
 };

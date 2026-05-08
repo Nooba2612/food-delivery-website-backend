@@ -3,7 +3,9 @@ DROP DATABASE IF EXISTS eatsy_food;
 CREATE DATABASE eatsy_food;
 SHOW DATABASES;
 USE eatsy_food;
-SELECT VERSION();
+
+
+
 -- User authorization
 -- CREATE USER 'eatsy_user'@'localhost' IDENTIFIED BY '123';
 -- GRANT ALL PRIVILEGES ON eatsy_food.* TO 'eatsy_user'@'localhost';
@@ -519,7 +521,8 @@ VALUES
 ('Trần Thị Bình', 'tranthibinh', 'tranthibinh@gmail.com', '0902345678', '+84', '$2a$10$dummyhash2', 'Standard', 'Customer'),
 ('Lê Hoàng Cường', 'lehoangcuong', 'lehoangcuong@gmail.com', '0903456789', '+84', '$2a$10$dummyhash3', 'Standard', 'Customer'),
 ('Phạm Thị Dung', 'phamthidung', 'phamthidung@gmail.com', '0904567890', '+84', '$2a$10$dummyhash4', 'Standard', 'Customer'),
-('Hoàng Minh Đức', 'hoangminhduc', 'hoangminhduc@gmail.com', '0905678901', '+84', '$2a$10$dummyhash5', 'Standard', 'Customer');
+('Hoàng Minh Đức', 'hoangminhduc', 'hoangminhduc@gmail.com', '0905678901', '+84', '$2a$10$dummyhash5', 'Standard', 'Customer'),
+('Nguyễn Phan Minh Mẫn', 'man', 'nguyenphanminhman04@gmail.com', '0909943237', '+84', '$2b$10$VW2.qXqtf2sPkOy77rlA.eWEpP53pzWD4z77ZWFj9ZTeGBsq63tDC', 'Standard', 'Customer');
 
 -- Get user IDs and dish IDs for reviews
 SET @user1 = (SELECT user_id FROM Users WHERE username = 'nguyenvanan' LIMIT 1);

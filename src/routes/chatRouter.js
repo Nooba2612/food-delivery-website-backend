@@ -591,6 +591,66 @@ router.post(
     chatController.sendMessage,
 );
 
+// Create call message bubble
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/call:
+ *   post:
+ *     summary: Create call message bubble
+ *     description: Create a message bubble recording a call after it ends
+ *     tags:
+ *       - Chat - Messages
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Conversation ID (UUID)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               callId:
+ *                 type: string
+ *                 description: Call ID (UUID)
+ *               callType:
+ *                 type: string
+ *                 enum: ['voice', 'video']
+ *                 description: Type of call
+ *               callStatus:
+ *                 type: string
+ *                 enum: ['accepted', 'cancelled', 'rejected', 'missed']
+ *                 description: Status of the call
+ *               durationSeconds:
+ *                 type: number
+ *                 description: Call duration in seconds
+ *     responses:
+ *       201:
+ *         description: Call message created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Invalid request parameters
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Conversation not found
+ */
+router.post("/:conversationId/call", authMiddleware, chatController.createCallMessage);
+
 // Mark messages as read
 /**
  * @swagger
@@ -796,14 +856,13 @@ router.put("/:conversationId/messages/:messageId/recall", authMiddleware, chatCo
  *     responses:
  *       200:
  *         description: Conversation marked as read
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- */
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
 router.put("/:conversationId/read", authMiddleware, chatController.markConversationAsRead);
 
 // Add reaction to message
@@ -839,8 +898,7 @@ router.put("/:conversationId/read", authMiddleware, chatController.markConversat
  *                 description: Emoji character
  *     responses:
  *       200:
- *         description: Reaction added
- *         content:
+ *         description: Reaction added *         content:
  *           application/json:
  *             schema:
  *               type: object
@@ -855,8 +913,7 @@ router.put("/:conversationId/read", authMiddleware, chatController.markConversat
  *                     reactions:
  *                       type: array
  *                       items:
- *                         type: object
- *       401:
+ *                         type: object *       401:
  *         description: Unauthorized
  */
 router.post("/:conversationId/messages/:messageId/reaction", authMiddleware, chatController.addReaction);
@@ -893,8 +950,7 @@ router.post("/:conversationId/messages/:messageId/reaction", authMiddleware, cha
  *                 type: string
  *     responses:
  *       200:
- *         description: Reaction removed
- *         content:
+ *         description: Reaction removed *         content:
  *           application/json:
  *             schema:
  *               type: object
@@ -907,8 +963,7 @@ router.post("/:conversationId/messages/:messageId/reaction", authMiddleware, cha
  *                     messageId:
  *                       type: string
  *                     reactions:
- *                       type: array
- *       401:
+ *                       type: array *       401:
  *         description: Unauthorized
  */
 router.delete("/:conversationId/messages/:messageId/reaction", authMiddleware, chatController.removeReaction);
@@ -941,15 +996,13 @@ router.delete("/:conversationId/messages/:messageId/reaction", authMiddleware, c
  *                 description: User UUID to add
  *     responses:
  *       200:
- *         description: Member added
- *         content:
+ *         description: Member added *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 success:
- *                   type: boolean
- *       401:
+ *                   type: boolean *       401:
  *         description: Unauthorized
  */
 router.post("/:conversationId/members", authMiddleware, chatController.addMemberToGroup);
@@ -981,17 +1034,104 @@ router.post("/:conversationId/members", authMiddleware, chatController.addMember
  *                 type: string
  *     responses:
  *       200:
- *         description: Member removed
- *         content:
+ *         description: Member removed *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 success:
- *                   type: boolean
- *       401:
+ *                   type: boolean *       401:
  *         description: Unauthorized
  */
 router.delete("/:conversationId/members", authMiddleware, chatController.removeMemberFromGroup);
+
+// Disband group
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/disband:
+ *   delete:
+ *     summary: Disband group
+ *     tags:
+ *       - Chat - Group
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Group disbanded
+ */
+router.delete("/:conversationId/disband", authMiddleware, chatController.disbandGroup);
+
+// Update member role
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/members/role:
+ *   put:
+ *     summary: Update member role
+ *     tags:
+ *       - Chat - Group Members
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               memberId:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [admin, member]
+ *     responses:
+ *       200:
+ *         description: Role updated
+ */
+router.put("/:conversationId/members/role", authMiddleware, chatController.updateMemberRole);
+
+// Forward message
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/messages/forward:
+ *   post:
+ *     summary: Forward message
+ *     tags:
+ *       - Chat - Messages
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               originalConversationId:
+ *                 type: string
+ *               messageId:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Message forwarded
+ */
+router.post("/:conversationId/messages/forward", authMiddleware, chatController.forwardMessage);
 
 module.exports = router;

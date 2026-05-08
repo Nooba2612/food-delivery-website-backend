@@ -5,13 +5,13 @@ const TABLE_NAME = "active_calls";
 
 class ActiveCallModel {
     static async create(callData) {
-        const id = uuidv4();
+        const active_call_id = uuidv4();
         const now = new Date().toISOString();
 
         const params = {
             TableName: TABLE_NAME,
             Item: {
-                id,
+                active_call_id,
                 ...callData,
                 call_started_at: now,
                 created_at: now,
@@ -25,7 +25,7 @@ class ActiveCallModel {
     static async findById(activeCallId) {
         const params = {
             TableName: TABLE_NAME,
-            Key: { id: activeCallId },
+            Key: { active_call_id: activeCallId },
         };
 
         const result = await dynamodb.get(params).promise();
@@ -61,7 +61,7 @@ class ActiveCallModel {
 
         const params = {
             TableName: TABLE_NAME,
-            Key: { id: activeCallId },
+            Key: { active_call_id: activeCallId },
             UpdateExpression: `SET ${updateFields}`,
             ExpressionAttributeValues: expressionAttributeValues,
             ReturnValues: "ALL_NEW",
@@ -74,7 +74,7 @@ class ActiveCallModel {
     static async delete(activeCallId) {
         const params = {
             TableName: TABLE_NAME,
-            Key: { id: activeCallId },
+            Key: { active_call_id: activeCallId },
         };
 
         await dynamodb.delete(params).promise();

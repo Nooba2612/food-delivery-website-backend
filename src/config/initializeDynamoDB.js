@@ -111,6 +111,17 @@ const createMessagesTable = async () => {
         AttributeDefinitions: [
             { AttributeName: "conversation_id", AttributeType: "S" },
             { AttributeName: "message_id", AttributeType: "S" },
+            { AttributeName: "created_at", AttributeType: "S" },
+        ],
+        GlobalSecondaryIndexes: [
+            {
+                IndexName: "conversation_id-created_at-index",
+                KeySchema: [
+                    { AttributeName: "conversation_id", KeyType: "HASH" },
+                    { AttributeName: "created_at", KeyType: "RANGE" },
+                ],
+                Projection: { ProjectionType: "ALL" },
+            },
         ],
         BillingMode: "PAY_PER_REQUEST",
     };

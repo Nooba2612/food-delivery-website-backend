@@ -20,8 +20,22 @@ class CallService {
             }
 
             // Check if users are in same conversation
-            const initiatorMember = await ConversationParticipantModel.isMember(conversationId, initiatorId);
-            const recipientMember = await ConversationParticipantModel.isMember(conversationId, recipientId);
+            let initiatorMember = false;
+            let recipientMember = false;
+
+            try {
+                initiatorMember = await ConversationParticipantModel.isMember(conversationId, initiatorId);
+            } catch (error) {
+                console.warn(`⚠️  Failed to check initiator membership:`, error.message);
+                initiatorMember = false;
+            }
+
+            try {
+                recipientMember = await ConversationParticipantModel.isMember(conversationId, recipientId);
+            } catch (error) {
+                console.warn(`⚠️  Failed to check recipient membership:`, error.message);
+                recipientMember = false;
+            }
 
             if (!initiatorMember || !recipientMember) {
                 throw new Error("Users are not in the same conversation");
@@ -37,6 +51,75 @@ class CallService {
             });
 
             return call;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Initiate a group call
+     */
+    static async initiateGroupCall(initiatorId, conversationId, callType, participantIds) {
+        try {
+            if (!initiatorId || !conversationId || !callType || !participantIds || !Array.isArray(participantIds)) {
+                throw new Error("Missing required fields");
+            }
+
+            if (!["voice", "video"].includes(callType)) {
+                throw new Error("Invalid call type");
+            }
+
+            const call = await CallModel.create({
+                conversation_id: conversationId,
+                initiator_id: initiatorId,
+                call_type: callType,
+                is_group_call: true,
+                participant_ids: participantIds,
+                active_participant_ids: [initiatorId],
+                status: "ringing",
+            });
+
+            return call;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Add participant to group call
+     */
+    static async addGroupCallParticipant(callId, participantId) {
+        try {
+            const call = await CallModel.findById(callId);
+            if (!call) throw new Error("Call not found");
+
+            let activeParticipants = call.active_participant_ids || [];
+            if (!activeParticipants.includes(participantId)) {
+                activeParticipants.push(participantId);
+            }
+
+            return await CallModel.update(callId, {
+                active_participant_ids: activeParticipants
+            });
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Remove participant from group call
+     */
+    static async removeGroupCallParticipant(callId, participantId) {
+        try {
+            const call = await CallModel.findById(callId);
+            if (!call) throw new Error("Call not found");
+
+            let activeParticipants = call.active_participant_ids || [];
+            activeParticipants = activeParticipants.filter(id => id !== participantId);
+
+            return await CallModel.update(callId, {
+                active_participant_ids: activeParticipants
+            });
         } catch (error) {
             throw error;
         }
@@ -76,6 +159,28 @@ class CallService {
             });
 
             // Clean up active call
+            const activeCall = await ActiveCallModel.findByCallId(callId);
+            if (activeCall) {
+                await ActiveCallModel.delete(activeCall.id);
+            }
+
+            return call;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Cancel a call (caller cancels before recipient accepts)
+     */
+    static async cancelCall(callId) {
+        try {
+            // Update call status
+            const call = await CallModel.update(callId, {
+                status: "cancelled",
+            });
+
+            // Clean up active call (if any)
             const activeCall = await ActiveCallModel.findByCallId(callId);
             if (activeCall) {
                 await ActiveCallModel.delete(activeCall.id);

@@ -18,11 +18,11 @@ const validate = require("../middlewares/validate");
  *       - BearerAuth: []
  *     parameters:
  *       - in: query
- *         name: keyword
+ *         name: query
  *         schema:
  *           type: string
  *         required: true
- *         description: Keyword to search (username, email, or phone)
+ *         description: Query to search (username, email, or phone)
  *     responses:
  *       200:
  *         description: User(s) found successfully

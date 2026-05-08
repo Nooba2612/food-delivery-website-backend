@@ -2,12 +2,20 @@ const multer = require("multer");
 const path = require("path");
 const AWS = require("aws-sdk");
 
-// Configure AWS S3
-const s3 = new AWS.S3({
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    region: process.env.AWS_REGION || "ap-southeast-1",
-});
+const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+const region = process.env.AWS_REGION || "ap-southeast-1";
+
+let s3;
+if (accessKeyId && secretAccessKey && !accessKeyId.includes("dummy") && !secretAccessKey.includes("dummy")) {
+    s3 = new AWS.S3({
+        accessKeyId: accessKeyId,
+        secretAccessKey: secretAccessKey,
+        region: region,
+    });
+} else {
+    console.warn("AWS S3 credentials missing or invalid. S3 uploads will use development fallback.");
+}
 
 // ===== S3 Storage Configuration =====
 const s3Storage = multer.memoryStorage(); // Store in memory before uploading to S3
@@ -91,6 +99,12 @@ const profileUpload = multer({
 const uploadToS3 = async (file, folder) => {
     if (!file) return null;
 
+    if (!s3) {
+        console.warn(`[DEV MODE] Skipping S3 upload for ${file.originalname}. Returning placeholder.`);
+        // Return a data URI or a placeholder URL in dev mode
+        return `https://via.placeholder.com/150?text=${encodeURIComponent(file.originalname)}`;
+    }
+
     const bucketName = process.env.AWS_S3_BUCKET || "food-delivery";
     const timestamp = Date.now();
     const random = Math.round(Math.random() * 1e9);
@@ -110,10 +124,12 @@ const uploadToS3 = async (file, folder) => {
 
     try {
         const result = await s3.upload(params).promise();
-        // Return S3 URL (works if bucket allows public read or has public bucket policy)
         return result.Location;
     } catch (error) {
-        console.error("S3 upload error:", error);
+        console.error("S3 upload error:", error.message);
+        if (process.env.NODE_ENV !== "production") {
+            return `https://via.placeholder.com/150?text=UploadError`;
+        }
         throw new Error(`Failed to upload to S3: ${error.message}`);
     }
 };
@@ -125,3 +141,4 @@ module.exports = {
     uploadToS3,
     s3,
 };
+

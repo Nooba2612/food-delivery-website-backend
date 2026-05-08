@@ -24,11 +24,14 @@ const USER_SAFE_ATTRIBUTES = [
     "updatedAt",
 ];
 
+const { normalizePhone, getPhoneDigits } = require("@helpers/phoneHelper");
+
 const getUserByPhoneNumber = async (countryCode, phoneNumber) => {
     try {
+        const digits = getPhoneDigits(phoneNumber);
         const user = await userModel.findOne({
             attributes: USER_SAFE_ATTRIBUTES,
-            where: { countryCode: countryCode, phoneNumber: phoneNumber },
+            where: { countryCode: countryCode, phoneNumber: digits },
         });
         if (!user) return null;
         const plainUser = user.get({ plain: true });
@@ -94,10 +97,11 @@ const getUserById = async (userId) => {
 
 const createUser = async (username, type_login, country_code, phone_number, password) => {
     try {
+        const digits = getPhoneDigits(phone_number);
         const newUser = await userModel.create({
             username,
             typeLogin: type_login,
-            phoneNumber: phone_number,
+            phoneNumber: digits,
             countryCode: country_code,
             password,
         });
@@ -184,16 +188,34 @@ const changePassword = async (userId, oldPassword, newPassword) => {
 
 const findUser = async (query) => {
     try {
-        const user = await userModel.findOne({
-            where: {
-                [Op.or]: [{ email: query }, { phoneNumber: query }, { fullname: query }, { username: query }],
-            },
-        });
-        if (!user) {
-            throw new Error("User not found");
+        if (!query) return [];
+
+        let normalizedPhone = query;
+        if (query && !query.includes("@") && query.replace(/\D/g, "").length >= 9) {
+            normalizedPhone = getPhoneDigits(query);
         }
-        return user.toJSON();
+
+        const users = await userModel.findAll({
+            attributes: USER_SAFE_ATTRIBUTES,
+            where: {
+                [Op.or]: [
+                    { email: { [Op.like]: `%${query}%` } },
+                    { phoneNumber: { [Op.like]: `%${normalizedPhone}%` } },
+                    { fullname: { [Op.like]: `%${query}%` } },
+                    { username: { [Op.like]: `%${query}%` } }
+                ],
+            },
+            limit: 20
+        });
+
+        // Map to ensure user_id is present (compatibility)
+        return users.map(u => {
+            const plain = u.get({ plain: true });
+            plain.user_id = plain.userId;
+            return plain;
+        });
     } catch (error) {
+        console.error("📌 [findUser] error:", error.message);
         throw error;
     }
 };

@@ -32,4 +32,37 @@ const getDishById = async (dish_id, attributes) => {
     }
 };
 
-module.exports = { getAllDish, getDishesByName, getDishById };
+const createDish = async (data) => {
+    try {
+        return await dishModel.create(data);
+    } catch (error) {
+        console.error("Create dish failed:", error);
+        throw error;
+    }
+};
+
+const updateDish = async (dish_id, data) => {
+    try {
+        const dish = await dishModel.findByPk(dish_id);
+        if (!dish) return null;
+        await dish.update(data);
+        return dish;
+    } catch (error) {
+        console.error("Update dish failed:", error);
+        throw error;
+    }
+};
+
+const deleteDish = async (dish_id) => {
+    try {
+        const dish = await dishModel.findByPk(dish_id);
+        if (!dish) return null;
+        await dish.destroy();
+        return true;
+    } catch (error) {
+        console.error("Delete dish failed:", error);
+        throw error;
+    }
+};
+
+module.exports = { getAllDish, getDishesByName, getDishById, createDish, updateDish, deleteDish };
