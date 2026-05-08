@@ -187,8 +187,19 @@ CREATE TABLE CartItems (
 CREATE TABLE Orders (
     order_id CHAR(36) PRIMARY KEY,
     user_id CHAR(36),
+    quantity INT DEFAULT 0,
+    foods TEXT,
+    brand VARCHAR(100) DEFAULT 'Eatsy',
+    estimated_time INT DEFAULT NULL COMMENT 'Estimated delivery time in minutes',
     order_note TEXT,
     order_status ENUM('Pending', 'In Progress', 'Completed', 'Cancelled') NOT NULL,
+    address_id CHAR(36),
+    payment_method VARCHAR(100) DEFAULT 'Cash',
+    delivery_address TEXT,
+    total_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    payment_status ENUM('unpaid', 'paid') NOT NULL DEFAULT 'unpaid',
+    voucher_code VARCHAR(50) DEFAULT NULL COMMENT 'Applied voucher code',
+    discount_amount DECIMAL(10, 2) NOT NULL DEFAULT 0 COMMENT 'Discount from voucher',
     order_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(user_id)
 );
@@ -198,6 +209,8 @@ CREATE TABLE OrderItems (
     order_item_id CHAR(36) PRIMARY KEY,
     order_id CHAR(36),
     dish_id CHAR(36),
+    name VARCHAR(255),
+    price DECIMAL(10, 2),
     quantity INT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
