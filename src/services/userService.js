@@ -188,27 +188,34 @@ const changePassword = async (userId, oldPassword, newPassword) => {
 
 const findUser = async (query) => {
     try {
+        if (!query) return [];
+
         let normalizedPhone = query;
         if (query && !query.includes("@") && query.replace(/\D/g, "").length >= 9) {
             normalizedPhone = getPhoneDigits(query);
         }
 
-        const user = await userModel.findOne({
+        const users = await userModel.findAll({
+            attributes: USER_SAFE_ATTRIBUTES,
             where: {
                 [Op.or]: [
-                    { email: query },
-                    { phoneNumber: normalizedPhone },
-                    { phoneNumber: query }, // Fallback
-                    { fullname: query },
-                    { username: query }
+                    { email: { [Op.like]: `%${query}%` } },
+                    { phoneNumber: { [Op.like]: `%${normalizedPhone}%` } },
+                    { fullname: { [Op.like]: `%${query}%` } },
+                    { username: { [Op.like]: `%${query}%` } }
                 ],
             },
+            limit: 20
         });
-        if (!user) {
-            throw new Error("User not found");
-        }
-        return user.toJSON();
+
+        // Map to ensure user_id is present (compatibility)
+        return users.map(u => {
+            const plain = u.get({ plain: true });
+            plain.user_id = plain.userId;
+            return plain;
+        });
     } catch (error) {
+        console.error("📌 [findUser] error:", error.message);
         throw error;
     }
 };

@@ -40,6 +40,7 @@ class MessageModel {
     static async getHistory(conversationId, limit = 50, cursor = null, userId = null, deletedAt = null) {
         const params = {
             TableName: TABLE_NAME,
+            IndexName: "conversation_id-created_at-index",
             KeyConditionExpression: "conversation_id = :conversationId",
             FilterExpression: "is_deleted = :is_deleted",
             ExpressionAttributeValues: {
@@ -47,7 +48,7 @@ class MessageModel {
                 ":is_deleted": false,
             },
             Limit: limit,
-            ScanIndexForward: false, // des descending (newest first)
+            ScanIndexForward: false, // newest first
             ExclusiveStartKey: cursor,
         };
 
