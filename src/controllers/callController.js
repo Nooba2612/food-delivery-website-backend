@@ -1,5 +1,5 @@
 const CallService = require("@services/callService");
-const ConversationModel = require("@models/ConversationModel");
+const ConversationModel = require("@models/conversationModel");
 const CallModel = require("@models/callModel");
 const { getUserById } = require("@services/userService");
 

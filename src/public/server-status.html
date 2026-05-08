@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Server Status</title>
+        <style>
+            :root {
+                color-scheme: light;
+                --bg1: #f7f4ef;
+                --bg2: #eef4ff;
+                --card: rgba(255, 255, 255, 0.82);
+                --text: #132238;
+                --muted: #5a6b82;
+                --accent: #2f7cf6;
+                --ok: #1a9b61;
+                --ring: rgba(47, 124, 246, 0.18);
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                margin: 0;
+                min-height: 100vh;
+                font-family: "Segoe UI", Arial, sans-serif;
+                color: var(--text);
+                background:
+                    radial-gradient(circle at top left, var(--bg2), transparent 42%),
+                    radial-gradient(circle at bottom right, #fff4e8, transparent 38%),
+                    linear-gradient(135deg, var(--bg1), #ffffff 55%, #f4f8ff);
+                display: grid;
+                place-items: center;
+                padding: 24px;
+            }
+
+            .card {
+                width: min(640px, 100%);
+                background: var(--card);
+                border: 1px solid rgba(19, 34, 56, 0.08);
+                border-radius: 24px;
+                box-shadow: 0 24px 80px rgba(19, 34, 56, 0.12);
+                backdrop-filter: blur(10px);
+                padding: 32px;
+            }
+
+            .badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 10px;
+                padding: 10px 14px;
+                border-radius: 999px;
+                background: rgba(26, 155, 97, 0.1);
+                color: var(--ok);
+                font-weight: 700;
+                letter-spacing: 0.02em;
+            }
+
+            .dot {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                background: var(--ok);
+                box-shadow: 0 0 0 8px rgba(26, 155, 97, 0.12);
+            }
+
+            h1 {
+                margin: 18px 0 10px;
+                font-size: clamp(2rem, 4vw, 3rem);
+                line-height: 1.05;
+            }
+
+            p {
+                margin: 0;
+                color: var(--muted);
+                font-size: 1rem;
+                line-height: 1.7;
+            }
+
+            .meta {
+                margin-top: 22px;
+                display: grid;
+                gap: 12px;
+            }
+
+            .row {
+                display: flex;
+                justify-content: space-between;
+                gap: 16px;
+                padding: 14px 16px;
+                border-radius: 16px;
+                background: rgba(255, 255, 255, 0.7);
+                border: 1px solid rgba(19, 34, 56, 0.06);
+            }
+
+            .label {
+                color: var(--muted);
+                font-size: 0.92rem;
+            }
+
+            .value {
+                font-weight: 700;
+            }
+
+            .actions {
+                margin-top: 22px;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px;
+            }
+
+            a {
+                text-decoration: none;
+                color: inherit;
+            }
+
+            .button {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 44px;
+                padding: 0 16px;
+                border-radius: 14px;
+                border: 1px solid rgba(47, 124, 246, 0.2);
+                background: #fff;
+                color: var(--accent);
+                font-weight: 700;
+                box-shadow: 0 8px 24px var(--ring);
+            }
+
+            .button.primary {
+                background: var(--accent);
+                color: white;
+            }
+
+            code {
+                padding: 2px 8px;
+                border-radius: 8px;
+                background: rgba(19, 34, 56, 0.06);
+            }
+        </style>
+    </head>
+    <body>
+        <main class="card">
+            <div class="badge"><span class="dot"></span> Server is running</div>
+            <h1>Eatsy backend đang hoạt động</h1>
+            <p>
+                Nếu bạn mở được trang này, server Node/Express vẫn đang chạy bình thường. Dùng nó để kiểm tra nhanh
+                trước khi test VNPay hoặc API khác.
+            </p>
+
+            <section class="meta" aria-label="Server status details">
+                <div class="row">
+                    <span class="label">Endpoint</span>
+                    <span class="value"><code>/status</code></span>
+                </div>
+                <div class="row">
+                    <span class="label">Port</span>
+                    <span class="value"><code>5678</code></span>
+                </div>
+                <div class="row">
+                    <span class="label">Mode</span>
+                    <span class="value">HTTP health page</span>
+                </div>
+            </section>
+
+            <div class="actions">
+                <a class="button primary" href="/status">Refresh status</a>
+                <a class="button" href="/api-docs">Open API docs</a>
+            </div>
+        </main>
+    </body>
+</html>
