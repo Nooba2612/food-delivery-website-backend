@@ -8,12 +8,13 @@ const orderModel = sequelize.define(
             type: DataTypes.STRING(255),
             primaryKey: true,
         },
-        account_id: {
+        user_id: {
             type: DataTypes.STRING(255),
             allowNull: false,
+            field: "user_id",
             references: {
-                model: "Accounts",
-                key: "account_id",
+                model: "Users",
+                key: "user_id",
             },
         },
         quantity: {

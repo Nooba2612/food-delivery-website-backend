@@ -50,8 +50,8 @@ userModel.hasMany(addressModel, { foreignKey: "user_id", as: "addresses" });
 addressModel.belongsTo(userModel, { foreignKey: "user_id" });
 
 // Order associations
-userModel.hasMany(orderModel, { foreignKey: "account_id", as: "orders" });
-orderModel.belongsTo(userModel, { foreignKey: "account_id", as: "user" });
+userModel.hasMany(orderModel, { foreignKey: "user_id", as: "orders" });
+orderModel.belongsTo(userModel, { foreignKey: "user_id", as: "user" });
 
 orderModel.hasMany(orderItemModel, { foreignKey: "order_id", as: "items" });
 orderItemModel.belongsTo(orderModel, { foreignKey: "order_id", as: "order" });

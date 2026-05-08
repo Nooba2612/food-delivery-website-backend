@@ -6,7 +6,7 @@ const OrderService = {
     getUserOrders: async (userId) => {
         try {
             const orders = await orderModel.findAll({
-                where: { account_id: userId },
+                where: { user_id: userId },
                 include: [
                     {
                         model: orderItemModel,
@@ -34,6 +34,8 @@ const OrderService = {
                     total_amount: plainOrder.total_amount,
                     payment_method: plainOrder.payment_method,
                     delivery_address: plainOrder.delivery_address,
+                    voucher_code: plainOrder.voucher_code,
+                    discount_amount: plainOrder.discount_amount || 0,
                     items_preview: plainOrder.items.map((item) => ({
                         name: item.name || item.dish?.name || "Unknown Dish",
                         quantity: item.quantity,
@@ -105,12 +107,12 @@ const OrderService = {
                     throw new AppError(`Món ăn '${dish.name}' không đủ số lượng trong kho`, 400);
                 }
                 
-                // Use price_snapshot from cart item
-                const itemPrice = parseFloat(item.price_snapshot);
+                // Use priceSnapshot (camelCase attribute name from Sequelize)
+                const itemPrice = parseFloat(item.priceSnapshot || item.price_snapshot || 0);
                 totalAmount += itemPrice * item.quantity;
 
                 return {
-                    dish_id: item.dish_id,
+                    dish_id: item.dishId || item.dish_id,
                     name: dish.name,
                     price: itemPrice,
                     quantity: item.quantity,
@@ -176,7 +178,7 @@ const OrderService = {
             await orderModel.create(
                 {
                     order_id: orderId,
-                    account_id: userId,
+                    user_id: userId,
                     quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
                     foods: validatedItems.map((i) => `${i.name} x${i.quantity}`).join(", "),
                     brand: orderBrand,
@@ -231,7 +233,14 @@ const OrderService = {
                 discount_amount: discountAmount,
                 voucher_applied: appliedVoucher ? appliedVoucher.code : null,
                 status: "pending",
-                payment_method: "COD"
+                payment_method: "COD",
+                brand: orderBrand,
+                estimated_time: estimatedTime,
+                items: validatedItems.map(item => ({
+                    name: item.name,
+                    quantity: item.quantity,
+                    price: item.price
+                }))
             };
         } catch (error) {
             if (t) await t.rollback();
@@ -265,7 +274,7 @@ const OrderService = {
                 throw error;
             }
 
-            if (order.account_id !== userId) {
+            if (order.user_id !== userId) {
                 const error = new Error("Access denied");
                 error.status = 403;
                 throw error;
@@ -387,7 +396,7 @@ const OrderService = {
         try {
             // 1. Fetch the past order and its items
             const order = await orderModel.findOne({
-                where: { order_id: orderId, account_id: userId },
+                where: { order_id: orderId, user_id: userId },
                 include: [{ model: orderItemModel, as: "items" }],
                 transaction: t,
             });
