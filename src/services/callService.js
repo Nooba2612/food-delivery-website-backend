@@ -1,7 +1,7 @@
 const { v4: uuidv4 } = require("uuid");
 const CallModel = require("@models/callModel");
 const ActiveCallModel = require("@models/activeCallModel");
-const ConversationParticipantModel = require("@models/ConversationParticipantModel");
+const ConversationParticipantModel = require("@models/conversationParticipantModel");
 const userService = require("./userService");
 
 class CallService {

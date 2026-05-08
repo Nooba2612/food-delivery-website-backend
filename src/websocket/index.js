@@ -2,7 +2,7 @@ const socketIO = require("socket.io");
 const jwt = require("jsonwebtoken");
 const CallModel = require("@models/callModel");
 const ChatService = require("@services/chatService");
-const ConversationParticipantModel = require("@models/ConversationParticipantModel");
+const ConversationParticipantModel = require("@models/conversationParticipantModel");
 const { getUserById } = require("@services/userService");
 
 // Store active user connections

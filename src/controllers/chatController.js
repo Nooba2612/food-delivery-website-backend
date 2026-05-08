@@ -237,7 +237,7 @@ const sendMessage = async (req, res) => {
         // Emit real-time message to all users in conversation
         if (io) {
             const { emitMessageToConversation, emitConversationUpdated } = require("@websocket");
-            const ConversationParticipantModel = require("@models/ConversationParticipantModel");
+            const ConversationParticipantModel = require("@models/conversationParticipantModel");
 
             emitMessageToConversation(io, conversationId, message);
 
@@ -322,7 +322,7 @@ const createCallMessage = async (req, res) => {
         }
 
         // Check if user is member of conversation
-        const ConversationModel = require("@models/ConversationModel");
+        const ConversationModel = require("@models/conversationModel");
         const conversation = await ConversationModel.findById(conversationId);
         if (!conversation) {
             return res.status(404).json({
@@ -622,7 +622,7 @@ const addMemberToGroup = async (req, res) => {
             const ids = Array.isArray(memberIds) ? memberIds : [memberIds];
             
             // Fetch updated member list to notify everyone
-            const members = await require("@models/ConversationParticipantModel").findMembersOfConversation(conversationId);
+            const members = await require("@models/conversationParticipantModel").findMembersOfConversation(conversationId);
             const allMemberIds = members.map(m => m.user_id);
 
             for (const memberId of ids) {
@@ -702,7 +702,7 @@ const removeMemberFromGroup = async (req, res) => {
             });
 
             // 3. Update conversation list for remaining members
-            const members = await require("@models/ConversationParticipantModel").findMembersOfConversation(conversationId);
+            const members = await require("@models/conversationParticipantModel").findMembersOfConversation(conversationId);
             const remainingMemberIds = members.map((m) => m.user_id);
             
             emitConversationUpdated(io, conversationId, remainingMemberIds, {
@@ -835,7 +835,7 @@ const disbandGroup = async (req, res) => {
             emitGroupDisbanded(io, conversationId);
 
             // Notify all members about the disbanding message in sidebar
-            const members = await require("@models/ConversationParticipantModel").findMembersOfConversation(conversationId);
+            const members = await require("@models/conversationParticipantModel").findMembersOfConversation(conversationId);
             const memberIds = members.map((m) => m.user_id);
 
             emitConversationUpdated(io, conversationId, memberIds, {

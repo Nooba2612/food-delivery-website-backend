@@ -12,6 +12,7 @@ const orderRouter = require("./orderRouter");
 const reviewRouter = require("./reviewRouter");
 const chatbotRouter = require("./chatbotRouter");
 const supportChatRouter = require("./supportChatRouter");
+const vnPayRouter = require("./vnPayRouter");
 const { authAdminMiddleware, authMiddleware } = require("@middlewares/authMiddleware");
 
 const routes = (app) => {
@@ -29,6 +30,7 @@ const routes = (app) => {
     app.use("/api", reviewRouter);
     app.use("/api/chat", chatbotRouter);
     app.use("/api/support", authMiddleware, supportChatRouter);
+    app.use("/api/vnpay", vnPayRouter);
 };
 
 module.exports = routes;
