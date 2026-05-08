@@ -164,8 +164,16 @@ const getConversationDetails = async (req, res) => {
 // Get messages in conversation
 const getMessages = async (req, res) => {
     try {
-        const userId = req.user.user_id;
-        const { conversationId, limit = 50, cursor } = req.body;
+        const userId = req.user.user_id || req.user.id;
+        const { conversationId } = req.params;
+        const { limit = 50, cursor } = req.query;
+
+        console.log("📨 [getMessages] Fetching messages:", {
+            conversationId,
+            userId,
+            limit,
+            cursor
+        });
 
         if (!conversationId) {
             return res.status(400).json({
@@ -174,13 +182,17 @@ const getMessages = async (req, res) => {
             });
         }
 
+        console.log("🔍 [getMessages] Requested conversationId:", conversationId);
         const result = await ChatService.getConversationHistory(conversationId, userId, parseInt(limit), cursor);
+
+        console.log(`✅ [getMessages] Retrieved ${result.messages?.length || 0} messages`);
 
         res.status(200).json({
             success: true,
             data: result,
         });
     } catch (error) {
+        console.error("❌ [getMessages] Error:", error.message);
         res.status(400).json({
             success: false,
             message: error.message,
@@ -191,10 +203,24 @@ const getMessages = async (req, res) => {
 // Send message
 const sendMessage = async (req, res) => {
     try {
-        const userId = req.user.user_id;
+        const userId = req.user.user_id || req.user.id;
         const { conversationId } = req.params;
-        const { content, type = "text", mentions = [], replyToId } = req.body;
+        
+        // Normalize content from various possible field names
+        const content = req.body.content || req.body.message || req.body.text || "";
+        const type = req.body.type || "text";
+        const mentions = req.body.mentions ? (typeof req.body.mentions === 'string' ? JSON.parse(req.body.mentions) : req.body.mentions) : [];
+        const replyToId = req.body.replyToId || req.body.reply_to_id;
+
         const io = req.app.get("io");
+
+        console.log("📤 [sendMessage] Incoming message:", {
+            conversationId,
+            userId,
+            contentLength: content?.length,
+            type,
+            hasFiles: !!(req.files && req.files.length > 0)
+        });
 
         // Content is required only if there are no attachments
         if (!content && (!req.files || req.files.length === 0)) {

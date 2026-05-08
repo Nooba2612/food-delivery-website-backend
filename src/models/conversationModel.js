@@ -24,13 +24,21 @@ class ConversationModel {
     }
 
     static async findById(conversationId) {
+        if (!conversationId) return null;
+
         const params = {
             TableName: TABLE_NAME,
             Key: { conversation_id: conversationId },
         };
 
         const result = await dynamodb.get(params).promise();
-        return result.Item || null;
+        if (!result.Item) return null;
+
+        // Task 5: Ensure both conversation_id and id are available for frontend compatibility
+        return {
+            ...result.Item,
+            id: result.Item.conversation_id
+        };
     }
 
     static async findByIdAndUserId(conversationId, userId) {

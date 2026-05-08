@@ -434,81 +434,7 @@ router.put("/:conversationId", authMiddleware, conversationUpload.single("avatar
 router.put("/:conversationId/settings", authMiddleware, chatController.updateConversationSettings);
 
 // Get messages in conversation
-/**
- * @swagger
- * /api/conversations/messages:
- *   post:
- *     summary: Get messages in conversation
- *     tags:
- *       - Chat - Messages
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               conversationId:
- *                 type: string
- *                 description: Conversation UUID
- *               limit:
- *                 type: number
- *                 default: 50
- *               cursor:
- *                 type: string
- *             required:
- *               - conversationId
- *     responses:
- *       200:
- *         description: Messages retrieved
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     messages:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           messageId:
- *                             type: string
- *                           conversationId:
- *                             type: string
- *                           senderId:
- *                             type: string
- *                           content:
- *                             type: string
- *                           type:
- *                             type: string
- *                             enum: [text, image, file, system]
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                           isEdited:
- *                             type: boolean
- *                           editedAt:
- *                             type: string
- *                             format: date-time
- *                           senderDetails:
- *                             type: object
- *                     hasMore:
- *                       type: boolean
- *                     nextCursor:
- *                       type: string
- *       400:
- *         description: Invalid request
- *       401:
- *         description: Unauthorized
- */
-router.post("/messages", authMiddleware, chatController.getMessages);
+router.get("/:conversationId/messages", authMiddleware, chatController.getMessages);
 
 // Send message
 /**
@@ -856,13 +782,14 @@ router.put("/:conversationId/messages/:messageId/recall", authMiddleware, chatCo
  *     responses:
  *       200:
  *         description: Conversation marked as read
-     *         content:
-     *           application/json:
-     *             schema:
-     *               type: object
-     *               properties:
-     *                 success:
-     *                   type: boolean
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ */
 router.put("/:conversationId/read", authMiddleware, chatController.markConversationAsRead);
 
 // Add reaction to message
@@ -898,7 +825,8 @@ router.put("/:conversationId/read", authMiddleware, chatController.markConversat
  *                 description: Emoji character
  *     responses:
  *       200:
- *         description: Reaction added *         content:
+ *         description: Reaction added
+ *         content:
  *           application/json:
  *             schema:
  *               type: object
@@ -913,7 +841,8 @@ router.put("/:conversationId/read", authMiddleware, chatController.markConversat
  *                     reactions:
  *                       type: array
  *                       items:
- *                         type: object *       401:
+ *                         type: object
+ *       401:
  *         description: Unauthorized
  */
 router.post("/:conversationId/messages/:messageId/reaction", authMiddleware, chatController.addReaction);
@@ -950,7 +879,8 @@ router.post("/:conversationId/messages/:messageId/reaction", authMiddleware, cha
  *                 type: string
  *     responses:
  *       200:
- *         description: Reaction removed *         content:
+ *         description: Reaction removed
+ *         content:
  *           application/json:
  *             schema:
  *               type: object
@@ -963,7 +893,8 @@ router.post("/:conversationId/messages/:messageId/reaction", authMiddleware, cha
  *                     messageId:
  *                       type: string
  *                     reactions:
- *                       type: array *       401:
+ *                       type: array
+ *       401:
  *         description: Unauthorized
  */
 router.delete("/:conversationId/messages/:messageId/reaction", authMiddleware, chatController.removeReaction);
@@ -996,13 +927,15 @@ router.delete("/:conversationId/messages/:messageId/reaction", authMiddleware, c
  *                 description: User UUID to add
  *     responses:
  *       200:
- *         description: Member added *         content:
+ *         description: Member added
+ *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 success:
- *                   type: boolean *       401:
+ *                   type: boolean
+ *       401:
  *         description: Unauthorized
  */
 router.post("/:conversationId/members", authMiddleware, chatController.addMemberToGroup);
@@ -1034,13 +967,15 @@ router.post("/:conversationId/members", authMiddleware, chatController.addMember
  *                 type: string
  *     responses:
  *       200:
- *         description: Member removed *         content:
+ *         description: Member removed
+ *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 success:
- *                   type: boolean *       401:
+ *                   type: boolean
+ *       401:
  *         description: Unauthorized
  */
 router.delete("/:conversationId/members", authMiddleware, chatController.removeMemberFromGroup);
