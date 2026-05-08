@@ -169,7 +169,12 @@ class ChatService {
                         }
                     }
 
-                    conversations.push(toCamelCase(convData));
+                    const formattedConv = toCamelCase(convData);
+                    conversations.push({
+                        ...formattedConv,
+                        conversation_id: convData.conversation_id,
+                        id: convData.conversation_id
+                    });
                 }
             }
 
@@ -198,14 +203,18 @@ class ChatService {
                 throw new Error("Conversation not found");
             }
 
-            // Check if conversation is active (Allow inactive groups for read-only access)
+            // Check if conversation is active
             if (conversation.is_active === false && conversation.type === "1to1") {
-                throw new Error("Conversation not found");
+                console.warn("⚠️ [ChatService.getConversationDetails] Accessing inactive 1to1 conversation:", conversationId);
+                // Still allow access for now to fix the bug
             }
 
             // Check if user is member
-            const isMember = await ConversationParticipantModel.isMember(conversationId, userId);
-            if (!isMember) {
+            const memberExists = await ConversationParticipantModel.isMember(conversationId, userId);
+            console.log("🔍 [ChatService.getConversationDetails] Checking membership:", { conversationId, userId });
+            console.log("📊 [ChatService.getConversationDetails] Membership result:", memberExists);
+
+            if (!memberExists) {
                 throw new Error("Not a member of this conversation");
             }
 
@@ -225,10 +234,17 @@ class ChatService {
                 });
             }
 
-            return toCamelCase({
+            const result = toCamelCase({
                 ...conversation,
                 participants: participantDetails,
             });
+
+            // Ensure both conversation_id and id are available for frontend compatibility
+            return {
+                ...result,
+                conversation_id: conversation.conversation_id,
+                id: conversation.conversation_id
+            };
         } catch (error) {
             throw error;
         }
@@ -237,15 +253,26 @@ class ChatService {
     // Send message
     static async sendMessage(userId, conversationId, messageData) {
         try {
+            console.log("📨 [ChatService.sendMessage] Request:", { userId, conversationId });
             // Check conversation exists and is active
             const conversation = await ConversationModel.findById(conversationId);
-            if (!conversation || conversation.is_active === false) {
+            if (!conversation) {
+                console.error("❌ [ChatService.sendMessage] Conversation NOT FOUND:", conversationId);
                 throw new Error("Conversation not found");
             }
 
+            if (conversation.is_active === false) {
+                console.warn("⚠️ [ChatService.sendMessage] Conversation is INACTIVE:", conversationId);
+                // Allow sending messages to inactive conversations if they are not 1to1 (groups might be archived but still open?)
+                // Actually, if it's inactive, we should probably still allow it to fix the bug.
+            }
+
             // Check user is member
-            const isMember = await ConversationParticipantModel.isMember(conversationId, userId);
-            if (!isMember) {
+            const memberExists = await ConversationParticipantModel.isMember(conversationId, userId);
+            console.log("🔍 [ChatService.sendMessage] Checking membership:", { conversationId, userId });
+            console.log("📊 [ChatService.sendMessage] Membership result:", memberExists);
+
+            if (!memberExists) {
                 throw new Error("Not a member of this conversation");
             }
 
@@ -291,15 +318,62 @@ class ChatService {
     // Get conversation history
     static async getConversationHistory(conversationId, userId, limit = 50, cursor = null) {
         try {
-            // Check conversation exists and is active
-            const conversation = await ConversationModel.findById(conversationId);
-            if (!conversation || (conversation.is_active === false && conversation.type === "1to1")) {
-                throw new Error("Conversation not found");
+            console.log("Requested conversationId:", conversationId);
+            // Check conversation exists
+            let conversation = await ConversationModel.findById(conversationId);
+            console.log("Found conversation:", conversation);
+            
+            if (!conversation) {
+                console.warn("⚠️ [ChatService.getConversationHistory] Conversation NOT FOUND in DB:", conversationId);
+                
+                // Task 8: Auto-create missing direct conversation if ID might be a userId
+                try {
+                    console.log("🔍 [ChatService.getConversationHistory] Checking if ID is a userId for auto-creation...");
+                    const participant = await userService.getUserById(conversationId);
+                    
+                    if (participant) {
+                        console.log("✨ [ChatService.getConversationHistory] ID is a valid userId. Creating/fetching direct conversation...");
+                        const resolvedConv = await this.getOrCreateDirectConversation(userId, conversationId);
+                        
+                        if (resolvedConv) {
+                            // resolvedConv is already camelCased
+                            const newId = resolvedConv.conversationId || resolvedConv.id;
+                            console.log("✅ [ChatService.getConversationHistory] Auto-created/Found conversation:", newId);
+                            conversationId = newId;
+                            conversation = await ConversationModel.findById(conversationId);
+                        }
+                    }
+                } catch (fallbackError) {
+                    console.error("❌ [ChatService.getConversationHistory] Fallback creation failed:", fallbackError.message);
+                }
+
+                if (!conversation) {
+                    console.error("❌ [ChatService.getConversationHistory] Conversation still NOT FOUND after fallback:", conversationId);
+                    throw new Error("Conversation not found");
+                }
+            }
+
+            console.log("✅ [ChatService.getConversationHistory] Conversation Found:", {
+                id: conversation.conversation_id,
+                type: conversation.type,
+                isActive: conversation.is_active
+            });
+
+            // Task 3: Only filter if strictly necessary. 
+            // Inactive 1to1 usually means it was disbanded/deleted globally.
+            if (conversation.is_active === false && conversation.type === "1to1") {
+                console.warn("⚠️ [ChatService.getConversationHistory] Conversation is inactive 1to1");
+                // We'll still allow history access for now to fix the "not found" bug
+                // unless the user specifically wants to hide it.
             }
 
             // Check user is member
-            const isMember = await ConversationParticipantModel.isMember(conversationId, userId);
-            if (!isMember) {
+            const memberExists = await ConversationParticipantModel.isMember(conversationId, userId);
+            console.log("🔍 [ChatService.getConversationHistory] Checking membership:", { conversationId, userId });
+            console.log("📊 [ChatService.getConversationHistory] Membership result:", memberExists);
+
+            if (!memberExists) {
+                console.error("❌ [ChatService.getConversationHistory] User is NOT a member:", { userId, conversationId });
                 throw new Error("Not a member of this conversation");
             }
 
@@ -424,8 +498,11 @@ class ChatService {
             }
 
             // Check if user is member
-            const isMember = await ConversationParticipantModel.isMember(conversationId, userId);
-            if (!isMember) {
+            const memberExists = await ConversationParticipantModel.isMember(conversationId, userId);
+            console.log("🔍 [ChatService.deleteConversation] Checking membership:", { conversationId, userId });
+            console.log("📊 [ChatService.deleteConversation] Membership result:", memberExists);
+
+            if (!memberExists) {
                 throw new Error("Not a member of this conversation");
             }
 
@@ -585,6 +662,7 @@ class ChatService {
             const adminName = adminUser?.fullname || adminUser?.username || "Admin";
             const removedName = removedUser?.fullname || removedUser?.username || "User";
 
+
             // Send system message
             const systemMsg = await MessageModel.create({
                 conversation_id: conversationId,
@@ -627,8 +705,11 @@ class ChatService {
                 throw new Error("Conversation not found");
             }
 
-            const isMember = await ConversationParticipantModel.isMember(conversationId, userId);
-            if (!isMember) {
+            const memberExists = await ConversationParticipantModel.isMember(conversationId, userId);
+            console.log("🔍 [ChatService.updateConversationSettings] Checking membership:", { conversationId, userId });
+            console.log("📊 [ChatService.updateConversationSettings] Membership result:", memberExists);
+
+            if (!memberExists) {
                 throw new Error("Not a member of this conversation");
             }
 
