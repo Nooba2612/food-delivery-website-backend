@@ -3,12 +3,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const router = (0, express_1.Router)();
 
-// Helper function to sort object keys
 function sortObject(obj) {
     let sorted = {};
     let str = [];
     for (let key in obj) {
-        if (obj.hasOwnProperty(key)) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
             str.push(encodeURIComponent(key));
         }
     }
@@ -18,12 +17,9 @@ function sortObject(obj) {
     }
     return sorted;
 }
-router.post("/create_payment_url", function (req, res, next) {
+router.post("/create_payment_url", function (req, res) {
     const ipAddr =
-        req.headers["x-forwarded-for"] ||
-        req.connection.remoteAddress ||
-        req.socket?.remoteAddress ||
-        req.connection?.socket?.remoteAddress;
+        req.headers["x-forwarded-for"] || "127.0.0.1";
     const dateFormat = require("dateformat");
     const tmnCode = process.env.VNPAY_TMNCODE;
     const secretKey = process.env.VNPAY_HASH_SECRET;
@@ -31,7 +27,8 @@ router.post("/create_payment_url", function (req, res, next) {
     const returnUrl = process.env.VNPAY_RETURN_URL || "http://localhost:5678/api/vnpay/vnpay_return";
     const date = new Date();
     const createDate = dateFormat(date, "yyyymmddHHmmss");
-    const orderId = dateFormat(date, "HHmmss");
+    const expireDate = dateFormat(new Date(date.getTime() + 60 * 60 * 1000), "yyyymmddHHmmss");
+    const orderId = `${dateFormat(date, "yyyymmddHHmmss")}_${Math.floor(Math.random() * 1000000)}`;
     const amount = req.body.amount;
     const bankCode = req.body.bankCode;
     const orderInfo = req.body.orderDescription;
@@ -55,6 +52,7 @@ router.post("/create_payment_url", function (req, res, next) {
     vnp_Params["vnp_ReturnUrl"] = returnUrl;
     vnp_Params["vnp_IpAddr"] = ipAddr;
     vnp_Params["vnp_CreateDate"] = createDate;
+    vnp_Params["vnp_ExpireDate"] = expireDate;
     if (bankCode !== null && bankCode !== "") {
         vnp_Params["vnp_BankCode"] = bankCode;
     }
@@ -66,16 +64,16 @@ router.post("/create_payment_url", function (req, res, next) {
     const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
     vnp_Params["vnp_SecureHash"] = signed;
     vnpUrl += "?" + querystring.stringify(vnp_Params, { encode: false });
-    res.redirect(vnpUrl);
+    console.log(vnpUrl);
+    return res.status(200).json({ url: vnpUrl });
 });
-router.get("/vnpay_return", function (req, res, next) {
+router.get("/vnpay_return", function (req, res) {
     let vnp_Params = req.query;
     const secureHash = vnp_Params["vnp_SecureHash"];
     delete vnp_Params["vnp_SecureHash"];
     delete vnp_Params["vnp_SecureHashType"];
     vnp_Params = sortObject(vnp_Params);
-    const tmnCode = process.env.EXPO_PUBLIC_VNPAY_TMNCODE;
-    const secretKey = process.env.EXPO_PUBLIC_VNPAY_HASH_SECRET;
+    const secretKey = process.env.VNPAY_HASH_SECRET;
     const querystring = require("qs");
     const signData = querystring.stringify(vnp_Params, { encode: false });
     const crypto = require("crypto");

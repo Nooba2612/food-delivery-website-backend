@@ -13,9 +13,18 @@ const reviewRouter = require("./reviewRouter");
 const chatbotRouter = require("./chatbotRouter");
 const supportChatRouter = require("./supportChatRouter");
 const vnPayRouter = require("./vnPayRouter");
+const path = require("path");
 const { authAdminMiddleware, authMiddleware } = require("@middlewares/authMiddleware");
 
 const routes = (app) => {
+    app.get("/", (req, res) => {
+        res.redirect("/status");
+    });
+
+    app.get("/status", (req, res) => {
+        res.sendFile(path.join(process.cwd(), "src", "public", "server-status.html"));
+    });
+
     app.use("/api/dish", dishRouter);
     app.use("/api/upload", uploadRoute);
     app.use("/api/auth", authRouter);
