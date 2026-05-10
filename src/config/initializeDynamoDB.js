@@ -29,6 +29,10 @@ const createTables = async () => {
         // Create active_calls table
         await createActiveCallsTable();
 
+        // Update existing tables to add missing indexes
+        console.log("\n🔄 Updating tables with missing indexes...");
+        await updateMissingIndexes();
+
         console.log("\n✅ All DynamoDB tables created successfully!");
         process.exit(0);
     } catch (error) {
@@ -220,6 +224,94 @@ const createActiveCallsTable = async () => {
             console.log("⚠️  active_calls table already exists");
         } else {
             throw error;
+        }
+    }
+};
+
+const updateMissingIndexes = async () => {
+    // Update messages table to add missing conversation_id-created_at-index
+    await addIndexToMessagesTable();
+
+    // Update calls table to ensure all indexes exist
+    await addIndexToCallsTable();
+};
+
+const addIndexToMessagesTable = async () => {
+    try {
+        const tableDescription = await dynamodb.describeTable({ TableName: "messages" }).promise();
+        const gsiNames = (tableDescription.Table.GlobalSecondaryIndexes || []).map((gsi) => gsi.IndexName);
+
+        if (!gsiNames.includes("conversation_id-created_at-index")) {
+            console.log("📝 Adding conversation_id-created_at-index to messages table...");
+
+            const params = {
+                TableName: "messages",
+                AttributeDefinitions: [{ AttributeName: "created_at", AttributeType: "S" }],
+                GlobalSecondaryIndexUpdates: [
+                    {
+                        Create: {
+                            IndexName: "conversation_id-created_at-index",
+                            KeySchema: [
+                                { AttributeName: "conversation_id", KeyType: "HASH" },
+                                { AttributeName: "created_at", KeyType: "RANGE" },
+                            ],
+                            Projection: { ProjectionType: "ALL" },
+                        },
+                    },
+                ],
+            };
+
+            await dynamodb.updateTable(params).promise();
+            await dynamodb.waitFor("tableExists", { TableName: "messages" }).promise();
+            console.log("✅ conversation_id-created_at-index added to messages table");
+        } else {
+            console.log("✓ conversation_id-created_at-index already exists in messages table");
+        }
+    } catch (error) {
+        if (error.code === "ResourceNotFoundException") {
+            console.log("ℹ️  messages table doesn't exist yet (will be created)");
+        } else {
+            console.error("⚠️  Could not update messages table:", error.message);
+        }
+    }
+};
+
+const addIndexToCallsTable = async () => {
+    try {
+        const tableDescription = await dynamodb.describeTable({ TableName: "calls" }).promise();
+        const gsiNames = (tableDescription.Table.GlobalSecondaryIndexes || []).map((gsi) => gsi.IndexName);
+
+        if (!gsiNames.includes("conversation_id-created_at-index")) {
+            console.log("📝 Adding conversation_id-created_at-index to calls table...");
+
+            const params = {
+                TableName: "calls",
+                AttributeDefinitions: [{ AttributeName: "created_at", AttributeType: "N" }],
+                GlobalSecondaryIndexUpdates: [
+                    {
+                        Create: {
+                            IndexName: "conversation_id-created_at-index",
+                            KeySchema: [
+                                { AttributeName: "conversation_id", KeyType: "HASH" },
+                                { AttributeName: "created_at", KeyType: "RANGE" },
+                            ],
+                            Projection: { ProjectionType: "ALL" },
+                        },
+                    },
+                ],
+            };
+
+            await dynamodb.updateTable(params).promise();
+            await dynamodb.waitFor("tableExists", { TableName: "calls" }).promise();
+            console.log("✅ conversation_id-created_at-index added to calls table");
+        } else {
+            console.log("✓ conversation_id-created_at-index already exists in calls table");
+        }
+    } catch (error) {
+        if (error.code === "ResourceNotFoundException") {
+            console.log("ℹ️  calls table doesn't exist yet (will be created)");
+        } else {
+            console.error("⚠️  Could not update calls table:", error.message);
         }
     }
 };
