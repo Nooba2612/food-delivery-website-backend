@@ -20,12 +20,12 @@ const generateJWT = (user, expiresIn) => {
     return jwt.sign(payload, jwtSecretKey, { expiresIn: expiresIn || "1h" });
 };
 
-const generateTokens = (user) => {
-    const accessSecret = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY;
+const generateTokens = (user, customAccessExpires, customRefreshExpires) => {
+    const accessSecret = process.env.JWT_SECRET_KEY;
     const refreshSecret = process.env.JWT_SECRET_KEY;
 
-    const accessExpires = process.env.JWT_EXPIRES_IN || "15m";
-    const refreshExpires = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
+    const accessExpires = customAccessExpires || process.env.JWT_EXPIRES_IN;
+    const refreshExpires = customRefreshExpires || process.env.JWT_REFRESH_EXPIRES_IN;
 
     const payload = getPayload(user);
 
@@ -33,6 +33,23 @@ const generateTokens = (user) => {
     const refreshToken = jwt.sign(payload, refreshSecret, { expiresIn: refreshExpires });
 
     return { accessToken, refreshToken };
+};
+
+const parseExpiry = (expiry) => {
+    if (!expiry) return 3600 * 1000; // default 1h
+    const value = parseInt(expiry);
+    const unit = expiry.slice(-1);
+
+    switch (unit) {
+        case "h":
+            return value * 60 * 60 * 1000;
+        case "d":
+            return value * 24 * 60 * 60 * 1000;
+        case "m":
+            return value * 60 * 1000;
+        default:
+            return value * 1000;
+    }
 };
 
 const getCookie = (name) => {
@@ -46,6 +63,7 @@ const getCookie = (name) => {
 };
 
 module.exports = {
-    generateJWT, // kept for backward compatibility if needed elsewhere temporarily
+    generateJWT,
     generateTokens,
+    parseExpiry,
 };

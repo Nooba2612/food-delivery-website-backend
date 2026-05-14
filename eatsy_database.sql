@@ -517,12 +517,12 @@ VALUES
 -- Sample Users for Reviews
 INSERT INTO Users (fullname, username, email, phone_number, country_code, password, type_login, role)
 VALUES
-('Nguyễn Văn An', 'nguyenvanan', 'nguyenvanan@gmail.com', '0901234567', '+84', '$2a$10$dummyhash1', 'Standard', 'Customer'),
-('Trần Thị Bình', 'tranthibinh', 'tranthibinh@gmail.com', '0902345678', '+84', '$2a$10$dummyhash2', 'Standard', 'Customer'),
-('Lê Hoàng Cường', 'lehoangcuong', 'lehoangcuong@gmail.com', '0903456789', '+84', '$2a$10$dummyhash3', 'Standard', 'Customer'),
-('Phạm Thị Dung', 'phamthidung', 'phamthidung@gmail.com', '0904567890', '+84', '$2a$10$dummyhash4', 'Standard', 'Customer'),
-('Hoàng Minh Đức', 'hoangminhduc', 'hoangminhduc@gmail.com', '0905678901', '+84', '$2a$10$dummyhash5', 'Standard', 'Customer'),
-('Nguyễn Phan Minh Mẫn', 'man', 'nguyenphanminhman04@gmail.com', '0909943237', '+84', '$2b$10$VW2.qXqtf2sPkOy77rlA.eWEpP53pzWD4z77ZWFj9ZTeGBsq63tDC', 'Standard', 'Customer');
+('Nguyễn Văn An', 'nguyenvanan', 'nguyenvanan@gmail.com', '901234567', '+84', '$2a$10$dummyhash1', 'Standard', 'Customer'),
+('Trần Thị Bình', 'tranthibinh', 'tranthibinh@gmail.com', '902345678', '+84', '$2a$10$dummyhash2', 'Standard', 'Customer'),
+('Lê Hoàng Cường', 'lehoangcuong', 'lehoangcuong@gmail.com', '903456789', '+84', '$2a$10$dummyhash3', 'Standard', 'Customer'),
+('Phạm Thị Dung', 'phamthidung', 'phamthidung@gmail.com', '904567890', '+84', '$2a$10$dummyhash4', 'Standard', 'Customer'),
+('Hoàng Minh Đức', 'hoangminhduc', 'hoangminhduc@gmail.com', '905678901', '+84', '$2a$10$dummyhash5', 'Standard', 'Customer'),
+('Nguyễn Phan Minh Mẫn', 'minhman910', 'nguyenphanminhman04@gmail.com', '909943237', '+84', '$2b$10$VW2.qXqtf2sPkOy77rlA.eWEpP53pzWD4z77ZWFj9ZTeGBsq63tDC', 'Standard', 'Customer');
 
 -- Get user IDs and dish IDs for reviews
 SET @user1 = (SELECT user_id FROM Users WHERE username = 'nguyenvanan' LIMIT 1);

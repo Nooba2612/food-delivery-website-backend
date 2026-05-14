@@ -53,7 +53,6 @@
         "socket.io": "^4.7.2",
         "swagger-jsdoc": "^6.2.8",
         "swagger-ui-express": "^5.0.1",
-        "twilio": "^5.2.2",
         "uuid": "^10.0.0",
         "websocket": "^1.0.35",
         "winston": "^3.13.1"

@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require("uuid");
 
-const { createVerification } = require("@config/twilio");
+// Removed Twilio integration as per requirement
+// const { createVerification } = require("@config/twilio");
 const {
   saveOTP,
   generateOTP,
@@ -15,7 +16,7 @@ const {
   getUserByEmail,
   changePassword,
 } = require("@services/userService");
-const { generateJWT, generateTokens } = require("@helpers/jwtHelper");
+const { generateJWT, generateTokens, parseExpiry } = require("@helpers/jwtHelper");
 const { regexVietnamPhoneNumber, regexEmail } = require("@constants/constants");
 const { sendEmail } = require("@config/nodemailer");
 const { normalizePhone, getPhoneDigits, formatPhoneNumber } = require("@helpers/phoneHelper");
@@ -43,25 +44,31 @@ class authController {
       await saveOTP(countryCode, phone, otp);
       console.log(`[OTP] Saved to database for ${phone}`);
 
-      const twilioResult = await createVerification(formattedPhone, otp, "verification");
-
-      if (!twilioResult.success) {
-        // If it's a configuration issue (dummy credentials), we might still want fallback in dev
-        if (twilioResult.error === "Twilio misconfigured" && process.env.NODE_ENV !== "production") {
-            console.warn("Twilio misconfigured, using development OTP fallback");
-            return res.status(200).json({
-                success: true,
-                message: "Development OTP fallback",
-                otp: otp,
-            });
+      const isProd = process.env.NODE_ENV === "production";
+      
+      if (!isProd) {
+        console.log(`\n==================================================`);
+        console.log(`EATSY FOOD - OTP for ${formattedPhone}: ${otp}`);
+        console.log(`==================================================\n`);
+      } else {
+        const user = await getUserByPhoneNumber(countryCode, phone);
+        if (user && user.email) {
+            sendEmail(
+                user.email,
+                "Eatsy Verification Code",
+                `Your Eatsy verification code is: ${otp}`
+            );
+        } else {
+            console.warn(`[PROD] No email found for phone ${formattedPhone}. OTP logged to console: ${otp}`);
         }
-        
-        console.error(`[Twilio] SMS Delivery Failed for ${formattedPhone}:`, twilioResult.error);
-        return res.status(400).json({ success: false, message: "Failed to send OTP SMS" });
       }
 
-      console.log(`[Twilio] SMS Sent Successfully to ${formattedPhone}`);
-      res.status(200).json({ success: true, message: "OTP sent successfully" });
+      res.status(200).json({ 
+        success: true, 
+        message: "OTP sent successfully",
+        // In dev mode, return OTP to frontend for convenience if needed
+        otp: !isProd ? otp : undefined 
+      });
     } catch (error) {
       console.log(error);
       return res
@@ -158,19 +165,25 @@ class authController {
         return res.status(401).json({ success: false, message: "Mật khẩu không chính xác" });
       }
 
-      const jwtExpiresIn =
-        memorizedLogin === "true"
-          ? process.env.JWT_EXPIRES_IN_30D
-          : process.env.JWT_EXPIRES_IN_1H;
+      const isRemembered = memorizedLogin === true || memorizedLogin === "true";
 
-      const cookieMaxAge =
-        memorizedLogin === "true"
-          ? process.env.COOKIE_MAX_AGE_30D
-          : process.env.COOKIE_MAX_AGE_1H;
+      const jwtExpiresIn = isRemembered
+          ? process.env.JWT_EXPIRES_IN_30D || "30d"
+          : process.env.JWT_EXPIRES_IN_1H || "1h";
 
-      const tokens = generateTokens(user);
+      const tokens = generateTokens(user, jwtExpiresIn, isRemembered ? "30d" : "7d");
 
-      res.cookie("token", tokens.accessToken, { maxAge: parseInt(cookieMaxAge) });
+      const cookieMaxAge = parseExpiry(jwtExpiresIn);
+
+      res.cookie("token", tokens.accessToken, { 
+        maxAge: cookieMaxAge,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production"
+      });
+      
+      res.cookie("memorizedLogin", isRemembered, { 
+        maxAge: cookieMaxAge 
+      });
 
       return res.status(200).json({
         success: true,
@@ -178,6 +191,7 @@ class authController {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         user: user,
+        rememberMe: isRemembered,
         redirect: user.role === "Admin" ? "/admin" : "/",
       });
     } catch (error) {
@@ -229,19 +243,25 @@ class authController {
           .json({ success: false, message: "Register user failed" });
       }
 
-      const jwtExpiresIn =
-        memorizedLogin === "true"
-          ? process.env.JWT_EXPIRES_IN_30D
-          : process.env.JWT_EXPIRES_IN_1H;
+      const isRemembered = memorizedLogin === true || memorizedLogin === "true";
 
-      const cookieMaxAge =
-        memorizedLogin === "true"
-          ? process.env.COOKIE_MAX_AGE_30D
-          : process.env.COOKIE_MAX_AGE_1H;
+      const jwtExpiresIn = isRemembered
+          ? process.env.JWT_EXPIRES_IN_30D || "30d"
+          : process.env.JWT_EXPIRES_IN_1H || "1h";
 
-      const tokens = generateTokens(user);
+      const tokens = generateTokens(user, jwtExpiresIn, isRemembered ? "30d" : "7d");
 
-      res.cookie("token", tokens.accessToken, { maxAge: parseInt(cookieMaxAge) });
+      const cookieMaxAge = parseExpiry(jwtExpiresIn);
+
+      res.cookie("token", tokens.accessToken, { 
+        maxAge: cookieMaxAge,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production"
+      });
+      
+      res.cookie("memorizedLogin", isRemembered, { 
+        maxAge: cookieMaxAge 
+      });
 
       return res.status(200).json({
         success: true,
@@ -249,6 +269,7 @@ class authController {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         user: user,
+        rememberMe: isRemembered,
         redirect: user.role === "Admin" ? "/admin" : "/",
       });
     } catch (error) {
@@ -292,16 +313,18 @@ class authController {
           .json({ success: false, message: "Unauthorized" });
       }
 
-      const jwtExpiresIn =
-        memorizedLogin === "true"
+      const isRemembered = memorizedLogin === true || memorizedLogin === "true";
+      const jwtExpiresIn = isRemembered
           ? process.env.JWT_EXPIRES_IN_30D
           : process.env.JWT_EXPIRES_IN_1H;
-      const token = generateJWT(user, jwtExpiresIn); // create token
+      
+      const token = generateJWT(user, jwtExpiresIn); 
       return res.json({ 
         success: true, 
         message: "Login successful!",
         accessToken: token,
-        user: user
+        user: user,
+        rememberMe: isRemembered
       });
     } catch (error) {
       console.log(error);
@@ -325,29 +348,33 @@ class authController {
       try {
         const rawPhone = getPhoneDigits(info);
         const formattedPhone = formatPhoneNumber(info);
-        console.log(`[OTP] Generated Reset OTP for ${formattedPhone}: ${otp}`);
 
         await saveOTP(countryCode, rawPhone, otp);
-        console.log(`[OTP] Saved Reset OTP to database for ${rawPhone}`);
 
-        const twilioResult = await createVerification(formattedPhone, otp, "reset");
+        const isProd = process.env.NODE_ENV === "production";
 
-        if (!twilioResult.success) {
-          if (twilioResult.error === "Twilio misconfigured" && process.env.NODE_ENV !== "production") {
-              console.warn("Twilio misconfigured, using development OTP fallback");
-              return res.status(200).json({
-                  success: true,
-                  message: "Development OTP fallback",
-                  otp: otp,
-              });
+        if (!isProd) {
+          console.log(`\n==================================================`);
+          console.log(`EATSY FOOD - Reset OTP for ${formattedPhone}: ${otp}`);
+          console.log(`==================================================\n`);
+        } else {
+          const user = await getUserByPhoneNumber(countryCode, rawPhone);
+          if (user && user.email) {
+            sendEmail(
+              user.email,
+              "Eatsy Password Reset",
+              `Your password reset OTP is: ${otp}`
+            );
+          } else {
+            console.warn(`[PROD] No email found for phone ${formattedPhone} for reset. OTP: ${otp}`);
           }
-          
-          console.error(`[Twilio] Reset SMS Delivery Failed for ${formattedPhone}:`, twilioResult.error);
-          return res.status(400).json({ success: false, message: "Failed to send OTP SMS" });
         }
 
-        console.log(`[Twilio] Reset SMS Sent Successfully to ${formattedPhone}`);
-        return res.status(200).json({ success: true, message: "OTP sent successfully" });
+        return res.status(200).json({ 
+            success: true, 
+            message: "OTP sent successfully",
+            otp: !isProd ? otp : undefined
+        });
       } catch (error) {
         console.error("Send otp to phone number failed:", error);
         return res.status(500).json({ success: false, message: "Failed to send OTP SMS" });
@@ -450,6 +477,8 @@ class authController {
 
   async logoutUser(req, res) {
     try {
+      res.clearCookie("token");
+      res.clearCookie("memorizedLogin");
       return res.status(200).json({ success: true, message: "Logged out successfully" });
     } catch (error) {
       console.log("LOGOUT ERROR:", error);
