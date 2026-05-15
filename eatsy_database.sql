@@ -3,7 +3,9 @@ DROP DATABASE IF EXISTS eatsy_food;
 CREATE DATABASE eatsy_food;
 SHOW DATABASES;
 USE eatsy_food;
-SELECT VERSION();
+
+
+
 -- User authorization
 -- CREATE USER 'eatsy_user'@'localhost' IDENTIFIED BY '123';
 -- GRANT ALL PRIVILEGES ON eatsy_food.* TO 'eatsy_user'@'localhost';
@@ -187,8 +189,19 @@ CREATE TABLE CartItems (
 CREATE TABLE Orders (
     order_id CHAR(36) PRIMARY KEY,
     user_id CHAR(36),
+    quantity INT DEFAULT 0,
+    foods TEXT,
+    brand VARCHAR(100) DEFAULT 'Eatsy',
+    estimated_time INT DEFAULT NULL COMMENT 'Estimated delivery time in minutes',
     order_note TEXT,
     order_status ENUM('Pending', 'In Progress', 'Completed', 'Cancelled') NOT NULL,
+    address_id CHAR(36),
+    payment_method VARCHAR(100) DEFAULT 'Cash',
+    delivery_address TEXT,
+    total_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    payment_status ENUM('unpaid', 'paid') NOT NULL DEFAULT 'unpaid',
+    voucher_code VARCHAR(50) DEFAULT NULL COMMENT 'Applied voucher code',
+    discount_amount DECIMAL(10, 2) NOT NULL DEFAULT 0 COMMENT 'Discount from voucher',
     order_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(user_id)
 );
@@ -198,6 +211,8 @@ CREATE TABLE OrderItems (
     order_item_id CHAR(36) PRIMARY KEY,
     order_id CHAR(36),
     dish_id CHAR(36),
+    name VARCHAR(255),
+    price DECIMAL(10, 2),
     quantity INT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -493,20 +508,21 @@ VALUES
 
 INSERT INTO Vouchers (code, description, discount_type, discount_value, valid_from, valid_to, min_purchase, number_of_uses)
 VALUES
-('EATSYWELCOME', 'Giảm 10% cho hóa đơn', 'Percentage', 0.1, '2025-01-01 00:00:00', '2025-12-31 23:59:59', 0, 999),
-('EATSY50', 'Giảm 50.000đ cho đơn hàng từ 500.000đ', 'Amount', 50000, '2025-01-01 00:00:00', '2025-06-30 23:59:59', 500000, 100),
-('WELCOME20', 'Chào mừng khách hàng mới, giảm 20%', 'Percentage', 0.2, '2025-01-01 00:00:00', '2025-03-31 23:59:59', 0, 100),
-('BIGSALE100', 'Giảm 100.000đ cho đơn hàng từ 1.000.000đ', 'Amount', 100000, '2025-01-01 00:00:00', '2025-08-31 23:59:59', 1000000, 100),
-('FREESHIP', 'Miễn phí vận chuyển cho đơn hàng từ 300.000đ', 'Amount', 30000, '2025-01-01 00:00:00', '2025-12-31 23:59:59', 300000, 100);
+('EATSYWELCOME', 'Giảm 10% cho hóa đơn', 'Percentage', 0.1, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 0, 999),
+('EATSY50', 'Giảm 50.000đ cho đơn hàng từ 500.000đ', 'Amount', 50000, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 500000, 100),
+('WELCOME20', 'Chào mừng khách hàng mới, giảm 20%', 'Percentage', 0.2, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 0, 100),
+('BIGSALE100', 'Giảm 100.000đ cho đơn hàng từ 1.000.000đ', 'Amount', 100000, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 1000000, 100),
+('FREESHIP', 'Miễn phí vận chuyển cho đơn hàng từ 300.000đ', 'Amount', 30000, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 300000, 100);
 
 -- Sample Users for Reviews
 INSERT INTO Users (fullname, username, email, phone_number, country_code, password, type_login, role)
 VALUES
-('Nguyễn Văn An', 'nguyenvanan', 'nguyenvanan@gmail.com', '0901234567', '+84', '$2a$10$dummyhash1', 'Standard', 'Customer'),
-('Trần Thị Bình', 'tranthibinh', 'tranthibinh@gmail.com', '0902345678', '+84', '$2a$10$dummyhash2', 'Standard', 'Customer'),
-('Lê Hoàng Cường', 'lehoangcuong', 'lehoangcuong@gmail.com', '0903456789', '+84', '$2a$10$dummyhash3', 'Standard', 'Customer'),
-('Phạm Thị Dung', 'phamthidung', 'phamthidung@gmail.com', '0904567890', '+84', '$2a$10$dummyhash4', 'Standard', 'Customer'),
-('Hoàng Minh Đức', 'hoangminhduc', 'hoangminhduc@gmail.com', '0905678901', '+84', '$2a$10$dummyhash5', 'Standard', 'Customer');
+('Nguyễn Văn An', 'nguyenvanan', 'nguyenvanan@gmail.com', '901234567', '+84', '$2a$10$dummyhash1', 'Standard', 'Customer'),
+('Trần Thị Bình', 'tranthibinh', 'tranthibinh@gmail.com', '902345678', '+84', '$2a$10$dummyhash2', 'Standard', 'Customer'),
+('Lê Hoàng Cường', 'lehoangcuong', 'lehoangcuong@gmail.com', '903456789', '+84', '$2a$10$dummyhash3', 'Standard', 'Customer'),
+('Phạm Thị Dung', 'phamthidung', 'phamthidung@gmail.com', '904567890', '+84', '$2a$10$dummyhash4', 'Standard', 'Customer'),
+('Hoàng Minh Đức', 'hoangminhduc', 'hoangminhduc@gmail.com', '905678901', '+84', '$2a$10$dummyhash5', 'Standard', 'Customer'),
+('Nguyễn Phan Minh Mẫn', 'minhman910', 'nguyenphanminhman04@gmail.com', '909943237', '+84', '$2b$10$VW2.qXqtf2sPkOy77rlA.eWEpP53pzWD4z77ZWFj9ZTeGBsq63tDC', 'Standard', 'Customer');
 
 -- Get user IDs and dish IDs for reviews
 SET @user1 = (SELECT user_id FROM Users WHERE username = 'nguyenvanan' LIMIT 1);

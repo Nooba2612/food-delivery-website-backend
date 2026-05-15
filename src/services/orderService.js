@@ -6,7 +6,7 @@ const OrderService = {
     getUserOrders: async (userId) => {
         try {
             const orders = await orderModel.findAll({
-                where: { account_id: userId },
+                where: { user_id: userId },
                 include: [
                     {
                         model: orderItemModel,
@@ -34,6 +34,8 @@ const OrderService = {
                     total_amount: plainOrder.total_amount,
                     payment_method: plainOrder.payment_method,
                     delivery_address: plainOrder.delivery_address,
+                    voucher_code: plainOrder.voucher_code,
+                    discount_amount: plainOrder.discount_amount || 0,
                     items_preview: plainOrder.items.map((item) => ({
                         name: item.name || item.dish?.name || "Unknown Dish",
                         quantity: item.quantity,
@@ -58,13 +60,14 @@ const OrderService = {
     // POST /api/orders
     createOrderFromCart: async (userId, orderData) => {
         const { sequelize } = require("@config/sequelize");
-        const { addressModel, dishModel } = require("@models");
+        const { addressModel, dishModel, voucherModel, accountVoucher } = require("@models");
         const AppError = require("../utils/AppError");
+        const { Op } = require("sequelize");
         
         const t = await sequelize.transaction();
 
         try {
-            const { address_id, payment_method, note } = orderData;
+            const { address_id, payment_method, note, voucher_code } = orderData;
 
             // 1. Fetch Cart and Items
             const cart = await cartModel.findOne({ 
@@ -104,12 +107,12 @@ const OrderService = {
                     throw new AppError(`Món ăn '${dish.name}' không đủ số lượng trong kho`, 400);
                 }
                 
-                // Use price_snapshot from cart item
-                const itemPrice = parseFloat(item.price_snapshot);
+                // Use priceSnapshot (camelCase attribute name from Sequelize)
+                const itemPrice = parseFloat(item.priceSnapshot || item.price_snapshot || 0);
                 totalAmount += itemPrice * item.quantity;
 
                 return {
-                    dish_id: item.dish_id,
+                    dish_id: item.dishId || item.dish_id,
                     name: dish.name,
                     price: itemPrice,
                     quantity: item.quantity,
@@ -122,6 +125,49 @@ const OrderService = {
             const brands = [...new Set(validatedItems.map(i => i.brand))];
             const orderBrand = brands.length === 1 ? brands[0] : "Mixed Brands";
 
+            // 4.5. Apply Voucher if provided
+            let discountAmount = 0;
+            let appliedVoucher = null;
+            
+            if (voucher_code) {
+                const voucher = await voucherModel.findOne({
+                    where: { 
+                        code: voucher_code,
+                        valid_from: { [Op.lte]: new Date() },
+                        valid_to: { [Op.gte]: new Date() },
+                        number_of_uses: { [Op.gt]: 0 }
+                    },
+                    transaction: t
+                });
+
+                if (!voucher) {
+                    throw new AppError("Mã giảm giá không hợp lệ hoặc đã hết hạn", 400);
+                }
+
+                // Check min purchase requirement
+                if (totalAmount < voucher.min_purchase) {
+                    throw new AppError(`Đơn hàng tối thiểu ${voucher.min_purchase.toLocaleString('vi-VN')}₫ để áp dụng mã này`, 400);
+                }
+
+                // Calculate discount
+                if (voucher.discount_type === 'Percentage') {
+                    discountAmount = totalAmount * voucher.discount_value;
+                } else {
+                    discountAmount = Math.min(voucher.discount_value, totalAmount);
+                }
+
+                // Decrease voucher uses
+                await voucher.decrement('number_of_uses', { by: 1, transaction: t });
+                
+                appliedVoucher = {
+                    voucher_id: voucher.voucher_id,
+                    code: voucher.code,
+                    discount_amount: discountAmount
+                };
+            }
+
+            const finalAmount = Math.max(0, totalAmount - discountAmount);
+
             // 5. Compute estimated delivery time
             const BASE_DELIVERY_MINUTES = 15;
             const maxPrepTime = Math.max(...validatedItems.map(i => i.preparation_time), 0);
@@ -132,7 +178,7 @@ const OrderService = {
             await orderModel.create(
                 {
                     order_id: orderId,
-                    account_id: userId,
+                    user_id: userId,
                     quantity: validatedItems.reduce((acc, i) => acc + i.quantity, 0),
                     foods: validatedItems.map((i) => `${i.name} x${i.quantity}`).join(", "),
                     brand: orderBrand,
@@ -142,8 +188,10 @@ const OrderService = {
                     address_id,
                     payment_method: payment_method || "COD",
                     payment_status: "unpaid",
-                    total_amount: totalAmount,
+                    total_amount: finalAmount,
                     delivery_address: addressSnapshot,
+                    voucher_code: appliedVoucher ? appliedVoucher.code : null,
+                    discount_amount: discountAmount
                 },
                 { transaction: t },
             );
@@ -180,9 +228,19 @@ const OrderService = {
             
             return {
                 order_id: orderId,
-                total_amount: totalAmount,
+                total_amount: finalAmount,
+                original_amount: totalAmount,
+                discount_amount: discountAmount,
+                voucher_applied: appliedVoucher ? appliedVoucher.code : null,
                 status: "pending",
-                payment_method: "COD"
+                payment_method: "COD",
+                brand: orderBrand,
+                estimated_time: estimatedTime,
+                items: validatedItems.map(item => ({
+                    name: item.name,
+                    quantity: item.quantity,
+                    price: item.price
+                }))
             };
         } catch (error) {
             if (t) await t.rollback();
@@ -216,7 +274,7 @@ const OrderService = {
                 throw error;
             }
 
-            if (order.account_id !== userId) {
+            if (order.user_id !== userId) {
                 const error = new Error("Access denied");
                 error.status = 403;
                 throw error;
@@ -338,7 +396,7 @@ const OrderService = {
         try {
             // 1. Fetch the past order and its items
             const order = await orderModel.findOne({
-                where: { order_id: orderId, account_id: userId },
+                where: { order_id: orderId, user_id: userId },
                 include: [{ model: orderItemModel, as: "items" }],
                 transaction: t,
             });

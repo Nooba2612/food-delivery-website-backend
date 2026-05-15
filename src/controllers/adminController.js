@@ -6,6 +6,7 @@ const { emitOrderUpdated } = require("../websocket");
 const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/AppError");
 const { userModel, dishModel, categoryModel, orderModel, orderItemModel } = require("@models");
+const { normalizePhone } = require("@helpers/phoneHelper");
 
 const slugify = (str) =>
     str.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
@@ -43,10 +44,12 @@ class AdminController {
         const where = { role: "Employee" };
 
         if (search) {
+            const normalizedSearch = normalizePhone(search, "+84");
             where[Op.or] = [
                 { fullname: { [Op.like]: `%${search}%` } },
                 { email: { [Op.like]: `%${search}%` } },
                 { phoneNumber: { [Op.like]: `%${search}%` } },
+                { phoneNumber: { [Op.like]: `%${normalizedSearch}%` } },
             ];
         }
 
@@ -89,8 +92,10 @@ class AdminController {
             return next(new AppError("Vui lòng điền đầy đủ họ tên, email và số điện thoại", 400));
         }
 
+        const normalizedPhone = normalizePhone(phoneNumber, countryCode);
+
         const existing = await userModel.findOne({
-            where: { [Op.or]: [{ email }, { phoneNumber }] },
+            where: { [Op.or]: [{ email }, { phoneNumber: normalizedPhone }] },
         });
         if (existing) {
             return next(new AppError("Email hoặc số điện thoại đã tồn tại", 409));
@@ -103,7 +108,7 @@ class AdminController {
             userId: uuidv4(),
             fullname,
             email,
-            phoneNumber,
+            phoneNumber: normalizedPhone,
             countryCode,
             position: position || null,
             role: "Employee",
@@ -139,8 +144,10 @@ class AdminController {
         }
 
         if (phoneNumber && phoneNumber !== employee.phoneNumber) {
-            const phoneExists = await userModel.findOne({ where: { phoneNumber } });
+            const normalizedPhone = normalizePhone(phoneNumber, employee.countryCode || "+84");
+            const phoneExists = await userModel.findOne({ where: { phoneNumber: normalizedPhone } });
             if (phoneExists) return next(new AppError("Số điện thoại đã được sử dụng", 409));
+            req.body.phoneNumber = normalizedPhone;
         }
 
         await employee.update({

@@ -8,12 +8,13 @@ const orderModel = sequelize.define(
             type: DataTypes.STRING(255),
             primaryKey: true,
         },
-        account_id: {
+        user_id: {
             type: DataTypes.STRING(255),
             allowNull: false,
+            field: "user_id",
             references: {
-                model: "Accounts",
-                key: "account_id",
+                model: "Users",
+                key: "user_id",
             },
         },
         quantity: {
@@ -70,6 +71,17 @@ const orderModel = sequelize.define(
             type: DataTypes.ENUM("unpaid", "paid"),
             allowNull: false,
             defaultValue: "unpaid",
+        },
+        voucher_code: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            comment: "Applied voucher code for this order",
+        },
+        discount_amount: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: false,
+            defaultValue: 0,
+            comment: "Discount amount from voucher",
         },
         order_date: {
             type: DataTypes.DATE,

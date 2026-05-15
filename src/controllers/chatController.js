@@ -1,10 +1,11 @@
 const ChatService = require("@services/chatService");
 const { uploadToS3 } = require("@config/multer");
+const websocket = require("../websocket");
 
 // Get user's conversations
 const getConversations = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { limit = 20, cursor } = req.query;
 
         const result = await ChatService.getUserConversations(userId, parseInt(limit), cursor);
@@ -51,7 +52,7 @@ const getConversationsByUserId = async (req, res) => {
 // Get or create 1-to-1 conversation
 const getOrCreateDirectConversation = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { participantId } = req.body;
 
         if (!participantId) {
@@ -78,14 +79,26 @@ const getOrCreateDirectConversation = async (req, res) => {
 // Create group conversation
 const createGroupConversation = async (req, res) => {
     try {
-        const userId = req.user.username;
-        const { name, participantIds } = req.body;
+        const userId = req.user.user_id;
+        let { name, participantIds } = req.body;
         let avatarPath = null;
 
-        if (!name || !participantIds) {
+        // participantIds might be a JSON string if sent via FormData
+        if (typeof participantIds === "string") {
+            try {
+                participantIds = JSON.parse(participantIds);
+            } catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid participantIds format. Expected a JSON array.",
+                });
+            }
+        }
+
+        if (!name || !participantIds || !Array.isArray(participantIds)) {
             return res.status(400).json({
                 success: false,
-                message: "name and participantIds are required",
+                message: "name and participantIds (array) are required",
             });
         }
 
@@ -103,6 +116,12 @@ const createGroupConversation = async (req, res) => {
 
         const conversation = await ChatService.createGroupConversation(userId, name, participantIds, avatarPath);
 
+        // Emit WebSocket event to all participants
+        const io = req.app.get("io");
+        if (io) {
+            websocket.emitNewConversation(io, participantIds, conversation);
+        }
+
         res.status(201).json({
             success: true,
             data: conversation,
@@ -118,7 +137,7 @@ const createGroupConversation = async (req, res) => {
 // Get conversation details
 const getConversationDetails = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId } = req.body;
 
         if (!conversationId) {
@@ -145,8 +164,16 @@ const getConversationDetails = async (req, res) => {
 // Get messages in conversation
 const getMessages = async (req, res) => {
     try {
-        const userId = req.user.username;
-        const { conversationId, limit = 50, cursor } = req.body;
+        const userId = req.user.user_id || req.user.id;
+        const { conversationId } = req.params;
+        const { limit = 50, cursor } = req.query;
+
+        console.log("📨 [getMessages] Fetching messages:", {
+            conversationId,
+            userId,
+            limit,
+            cursor
+        });
 
         if (!conversationId) {
             return res.status(400).json({
@@ -155,13 +182,17 @@ const getMessages = async (req, res) => {
             });
         }
 
+        console.log("🔍 [getMessages] Requested conversationId:", conversationId);
         const result = await ChatService.getConversationHistory(conversationId, userId, parseInt(limit), cursor);
+
+        console.log(`✅ [getMessages] Retrieved ${result.messages?.length || 0} messages`);
 
         res.status(200).json({
             success: true,
             data: result,
         });
     } catch (error) {
+        console.error("❌ [getMessages] Error:", error.message);
         res.status(400).json({
             success: false,
             message: error.message,
@@ -172,10 +203,24 @@ const getMessages = async (req, res) => {
 // Send message
 const sendMessage = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id || req.user.id;
         const { conversationId } = req.params;
-        const { content, type = "text", mentions = [], replyToId } = req.body;
+        
+        // Normalize content from various possible field names
+        const content = req.body.content || req.body.message || req.body.text || "";
+        const type = req.body.type || "text";
+        const mentions = req.body.mentions ? (typeof req.body.mentions === 'string' ? JSON.parse(req.body.mentions) : req.body.mentions) : [];
+        const replyToId = req.body.replyToId || req.body.reply_to_id;
+
         const io = req.app.get("io");
+
+        console.log("📤 [sendMessage] Incoming message:", {
+            conversationId,
+            userId,
+            contentLength: content?.length,
+            type,
+            hasFiles: !!(req.files && req.files.length > 0)
+        });
 
         // Content is required only if there are no attachments
         if (!content && (!req.files || req.files.length === 0)) {
@@ -218,7 +263,7 @@ const sendMessage = async (req, res) => {
         // Emit real-time message to all users in conversation
         if (io) {
             const { emitMessageToConversation, emitConversationUpdated } = require("@websocket");
-            const ConversationParticipantModel = require("@models/ConversationParticipantModel");
+            const ConversationParticipantModel = require("@models/conversationParticipantModel");
 
             emitMessageToConversation(io, conversationId, message);
 
@@ -262,10 +307,110 @@ const sendMessage = async (req, res) => {
     }
 };
 
+/**
+ * Create a call message bubble after call ends
+ * POST /api/messages/:conversationId/call
+ */
+const createCallMessage = async (req, res) => {
+    try {
+        const userId = req.user.user_id;
+        const { conversationId } = req.params;
+        const { callId, callType, callStatus, durationSeconds } = req.body;
+        const io = req.app.get("io");
+
+        // Validate required fields
+        if (!callId) {
+            return res.status(400).json({
+                success: false,
+                message: "callId is required",
+            });
+        }
+
+        if (!["voice", "video"].includes(callType)) {
+            return res.status(400).json({
+                success: false,
+                message: "callType must be 'voice' or 'video'",
+            });
+        }
+
+        if (!["accepted", "cancelled", "rejected", "missed"].includes(callStatus)) {
+            return res.status(400).json({
+                success: false,
+                message: "callStatus must be 'accepted', 'cancelled', 'rejected', or 'missed'",
+            });
+        }
+
+        if (durationSeconds === undefined || durationSeconds < 0) {
+            return res.status(400).json({
+                success: false,
+                message: "durationSeconds must be a non-negative number",
+            });
+        }
+
+        // Check if user is member of conversation
+        const ConversationModel = require("@models/conversationModel");
+        const conversation = await ConversationModel.findById(conversationId);
+        if (!conversation) {
+            return res.status(404).json({
+                success: false,
+                message: "Conversation not found",
+            });
+        }
+
+        // Format call message
+        const icon = callType === "video" ? "📹" : "📞";
+        const callTypeText = callType === "video" ? "Video call" : "Voice call";
+
+        // Format duration
+        const formatDuration = (seconds) => {
+            if (!seconds || seconds <= 0) return "0s";
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            if (mins > 0) {
+                return `${mins}m ${secs}s`;
+            }
+            return `${secs}s`;
+        };
+
+        const duration = formatDuration(durationSeconds);
+        const statusText = callStatus !== "accepted" ? ` • ${callStatus}` : "";
+        const content = `${icon} ${callTypeText} • ${duration}${statusText}`;
+
+        // Create message in database
+        const message = await ChatService.sendMessage(userId, conversationId, {
+            content,
+            type: "call",
+            callData: {
+                callId,
+                callType,
+                callStatus,
+                durationSeconds,
+            },
+        });
+
+        // Broadcast via WebSocket
+        if (io) {
+            const { emitMessageToConversation } = require("@websocket");
+            emitMessageToConversation(io, conversationId, message);
+        }
+
+        res.status(201).json({
+            success: true,
+            data: message,
+        });
+    } catch (error) {
+        console.error("Error creating call message:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Failed to create call message",
+        });
+    }
+};
+
 // Edit message
 const editMessage = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId, messageId } = req.params;
         const { content } = req.body;
         const io = req.app.get("io");
@@ -300,7 +445,7 @@ const editMessage = async (req, res) => {
 // Delete message
 const deleteMessage = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId, messageId } = req.params;
         const io = req.app.get("io");
 
@@ -327,7 +472,7 @@ const deleteMessage = async (req, res) => {
 // Recall message (within 5 minutes)
 const recallMessage = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId, messageId } = req.params;
         const io = req.app.get("io");
 
@@ -355,7 +500,7 @@ const recallMessage = async (req, res) => {
 // Mark messages as read
 const markMessagesAsRead = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId } = req.params;
         const { messageIds } = req.body;
 
@@ -383,7 +528,7 @@ const markMessagesAsRead = async (req, res) => {
 // Mark entire conversation as read
 const markConversationAsRead = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId } = req.params;
 
         const result = await ChatService.markConversationAsRead(userId, conversationId);
@@ -403,7 +548,7 @@ const markConversationAsRead = async (req, res) => {
 // Add reaction to message
 const addReaction = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId, messageId } = req.params;
         const { emoji } = req.body;
         const io = req.app.get("io");
@@ -443,7 +588,7 @@ const addReaction = async (req, res) => {
 // Remove reaction from message
 const removeReaction = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId, messageId } = req.params;
         const { emoji } = req.body;
         const io = req.app.get("io");
@@ -483,27 +628,53 @@ const removeReaction = async (req, res) => {
 // Add member to group
 const addMemberToGroup = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId } = req.params;
-        const { memberId } = req.body;
+        const { memberIds } = req.body;
         const io = req.app.get("io");
 
-        if (!memberId) {
+        if (!memberIds) {
             return res.status(400).json({
                 success: false,
-                message: "memberId is required",
+                message: "memberIds are required",
             });
         }
 
-        const result = await ChatService.addMemberToGroup(userId, conversationId, memberId);
+        const result = await ChatService.addMemberToGroup(userId, conversationId, memberIds);
 
         // Emit real-time member added event
         if (io) {
-            const { emitMemberAdded } = require("@websocket");
-            emitMemberAdded(io, conversationId, {
-                memberId,
-                joinedAt: new Date().toISOString(),
-            });
+            const { emitMemberAdded, emitMessageToConversation, emitConversationUpdated } = require("@websocket");
+            const ids = Array.isArray(memberIds) ? memberIds : [memberIds];
+            
+            // Fetch updated member list to notify everyone
+            const members = await require("@models/conversationParticipantModel").findMembersOfConversation(conversationId);
+            const allMemberIds = members.map(m => m.user_id);
+
+            for (const memberId of ids) {
+                emitMemberAdded(io, conversationId, {
+                    memberId,
+                    joinedAt: new Date().toISOString(),
+                });
+                
+                // Notify the newly added user to refresh their conversation list
+                const userRoom = `user:${memberId}`;
+                io.to(userRoom).emit("member_added_to_new_group", {
+                    conversationId,
+                    addedBy: userId
+                });
+            }
+            
+            // Broadcast system messages
+            for (const sysMsg of result.systemMessages || []) {
+                emitMessageToConversation(io, conversationId, sysMsg);
+                
+                emitConversationUpdated(io, conversationId, allMemberIds, {
+                    lastMessage: sysMsg,
+                    lastMessageTimestamp: sysMsg.createdAt,
+                    unreadCount: 0,
+                });
+            }
         }
 
         res.status(200).json({
@@ -521,7 +692,7 @@ const addMemberToGroup = async (req, res) => {
 // Remove member from group
 const removeMemberFromGroup = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId } = req.params;
         const { memberId } = req.body;
         const io = req.app.get("io");
@@ -537,8 +708,44 @@ const removeMemberFromGroup = async (req, res) => {
 
         // Emit real-time member removed event
         if (io) {
-            const { emitMemberRemoved } = require("@websocket");
+            const { emitMemberRemoved, emitConversationUpdated, emitMessageToConversation } = require("@websocket");
+            
+            // 1. Notify the whole conversation room about the removal
             emitMemberRemoved(io, conversationId, memberId);
+
+            // 1.5. Broadcast the system message to the conversation
+            if (result.systemMessage) {
+                emitMessageToConversation(io, conversationId, result.systemMessage);
+            }
+            
+            // 2. Also notify the removed member's personal room (important for real-time kick)
+            const userRoom = `user:${memberId}`;
+            io.to(userRoom).emit("member_removed", {
+                conversationId,
+                memberId,
+                wasKicked: true,
+                timestamp: new Date().toISOString(),
+            });
+
+            // 3. Update conversation list for remaining members
+            const members = await require("@models/conversationParticipantModel").findMembersOfConversation(conversationId);
+            const remainingMemberIds = members.map((m) => m.user_id);
+            
+            emitConversationUpdated(io, conversationId, remainingMemberIds, {
+                lastMessage: result.systemMessage,
+                lastMessageTimestamp: result.systemMessage.createdAt,
+                unreadCount: 0,
+            });
+
+            // 4. Update conversation list for the removed member (show them they were kicked)
+            emitConversationUpdated(io, conversationId, [memberId], {
+                lastMessage: {
+                    ...result.systemMessage,
+                    content: `You were removed from the group by ${result.adminName}`
+                },
+                lastMessageTimestamp: result.systemMessage.createdAt,
+                unreadCount: 0,
+            });
         }
 
         res.status(200).json({
@@ -556,7 +763,7 @@ const removeMemberFromGroup = async (req, res) => {
 // Update conversation settings
 const updateConversationSettings = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId } = req.params;
         const { isMuted, isPinned } = req.body;
 
@@ -580,7 +787,7 @@ const updateConversationSettings = async (req, res) => {
 // Update conversation (name/avatar)
 const updateConversation = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId } = req.params;
         const { name } = req.body;
 
@@ -622,7 +829,7 @@ const updateConversation = async (req, res) => {
 // Delete conversation (archive)
 const deleteConversation = async (req, res) => {
     try {
-        const userId = req.user.username;
+        const userId = req.user.user_id;
         const { conversationId } = req.params;
 
         const result = await ChatService.deleteConversation(userId, conversationId);
@@ -630,6 +837,117 @@ const deleteConversation = async (req, res) => {
         res.status(200).json({
             success: true,
             message: result.message,
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+// Disband group
+const disbandGroup = async (req, res) => {
+    try {
+        const userId = req.user.user_id;
+        const { conversationId } = req.params;
+        const io = req.app.get("io");
+
+        const result = await ChatService.disbandGroup(userId, conversationId);
+
+        // Emit real-time group disbanded event
+        if (io) {
+            const { emitGroupDisbanded, emitConversationUpdated } = require("@websocket");
+            emitGroupDisbanded(io, conversationId);
+
+            // Notify all members about the disbanding message in sidebar
+            const members = await require("@models/conversationParticipantModel").findMembersOfConversation(conversationId);
+            const memberIds = members.map((m) => m.user_id);
+
+            emitConversationUpdated(io, conversationId, memberIds, {
+                lastMessage: {
+                    content: "This group was disbanded",
+                    type: "system",
+                    createdAt: new Date().toISOString(),
+                },
+                lastMessageTimestamp: new Date().toISOString(),
+                unreadCount: 0, // Everyone can see it's disbanded
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Group disbanded successfully",
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+// Update member role
+const updateMemberRole = async (req, res) => {
+    try {
+        const userId = req.user.user_id;
+        const { conversationId } = req.params;
+        const { memberId, role } = req.body;
+        const io = req.app.get("io");
+
+        if (!memberId || !role) {
+            return res.status(400).json({
+                success: false,
+                message: "memberId and role are required",
+            });
+        }
+
+        const result = await ChatService.updateMemberRole(userId, conversationId, memberId, role);
+
+        // Emit real-time role updated event
+        if (io) {
+            const { emitMemberRoleUpdated } = require("@websocket");
+            emitMemberRoleUpdated(io, conversationId, { memberId, role });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: result,
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+// Forward message
+const forwardMessage = async (req, res) => {
+    try {
+        const userId = req.user.user_id;
+        const { conversationId } = req.params;
+        const { originalConversationId, messageId } = req.body;
+        const io = req.app.get("io");
+
+        if (!originalConversationId || !messageId) {
+            return res.status(400).json({
+                success: false,
+                message: "originalConversationId and messageId are required",
+            });
+        }
+
+        const message = await ChatService.forwardMessage(userId, conversationId, originalConversationId, messageId);
+
+        // Emit real-time message to all users in conversation
+        if (io) {
+            const { emitMessageToConversation } = require("@websocket");
+            emitMessageToConversation(io, conversationId, message);
+        }
+
+        res.status(201).json({
+            success: true,
+            data: message,
         });
     } catch (error) {
         res.status(400).json({
@@ -647,6 +965,7 @@ module.exports = {
     getConversationDetails,
     getMessages,
     sendMessage,
+    createCallMessage,
     editMessage,
     deleteMessage,
     recallMessage,
@@ -659,4 +978,7 @@ module.exports = {
     updateConversationSettings,
     updateConversation,
     deleteConversation,
+    disbandGroup,
+    updateMemberRole,
+    forwardMessage,
 };

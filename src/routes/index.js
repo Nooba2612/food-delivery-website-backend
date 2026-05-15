@@ -9,11 +9,22 @@ const cartRouter = require("./cartRouter");
 const voucherRouter = require("./voucherRouter");
 const callRouter = require("./callRouter");
 const orderRouter = require("./orderRouter");
+const reviewRouter = require("./reviewRouter");
 const chatbotRouter = require("./chatbotRouter");
 const supportChatRouter = require("./supportChatRouter");
+const vnPayRouter = require("./vnPayRouter");
+const path = require("path");
 const { authAdminMiddleware, authMiddleware } = require("@middlewares/authMiddleware");
 
 const routes = (app) => {
+    app.get("/", (req, res) => {
+        res.redirect("/status");
+    });
+
+    app.get("/status", (req, res) => {
+        res.sendFile(path.join(process.cwd(), "src", "public", "server-status.html"));
+    });
+
     app.use("/api/dish", dishRouter);
     app.use("/api/upload", uploadRoute);
     app.use("/api/auth", authRouter);
@@ -21,13 +32,14 @@ const routes = (app) => {
     app.use("/api/conversations", chatRouter);
     app.use("/api/user", authMiddleware, usersRouter);
     app.use("/api/cart", authMiddleware, cartRouter);
-    app.use("/api/voucher", authMiddleware, voucherRouter);
+    app.use("/api/voucher", voucherRouter); // Auth handled in router
     app.use("/api/calls", authMiddleware, callRouter);
     app.use("/api/orders", authMiddleware, orderRouter);
-    app.use("/api/admin",  adminRouter);
+    app.use("/api/admin", adminRouter);
+    app.use("/api", reviewRouter);
     app.use("/api/chat", chatbotRouter);
     app.use("/api/support", authMiddleware, supportChatRouter);
-
+    app.use("/api/vnpay", vnPayRouter);
 };
 
 module.exports = routes;

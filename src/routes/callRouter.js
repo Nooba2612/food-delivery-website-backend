@@ -36,7 +36,7 @@ const { authMiddleware } = require("@middlewares/authMiddleware");
  *       400:
  *         description: Bad request
  */
-router.post("/", authMiddleware, callController.initiateCall);
+router.post("/", callController.initiateCall);
 
 /**
  * @swagger
@@ -129,6 +129,29 @@ router.post("/:callId/reject", authMiddleware, callController.rejectCall);
 
 /**
  * @swagger
+ * /api/calls/{callId}/cancel:
+ *   post:
+ *     summary: Cancel a call (caller only, before acceptance)
+ *     tags:
+ *       - Calls
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: callId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Call cancelled
+ *       403:
+ *         description: Only call initiator can cancel
+ */
+router.post("/:callId/cancel", authMiddleware, callController.cancelCall);
+
+/**
+ * @swagger
  * /api/calls/{callId}/end:
  *   post:
  *     summary: End a call
@@ -177,5 +200,62 @@ router.post("/:callId/end", authMiddleware, callController.endCall);
  *         description: Call history
  */
 router.get("/:conversationId/history", authMiddleware, callController.getCallHistory);
+
+/**
+ * @swagger
+ * /api/calls/group:
+ *   post:
+ *     summary: Initiate a group call
+ *     tags:
+ *       - Calls
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Group call initiated successfully
+ */
+router.post("/group", authMiddleware, callController.initiateGroupCall);
+
+/**
+ * @swagger
+ * /api/calls/{callId}/add-participant:
+ *   post:
+ *     summary: Add a participant to a group call
+ *     tags:
+ *       - Calls
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: callId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Participant added
+ */
+router.post("/:callId/add-participant", authMiddleware, callController.addParticipant);
+
+/**
+ * @swagger
+ * /api/calls/{callId}/remove-participant:
+ *   post:
+ *     summary: Remove a participant from a group call
+ *     tags:
+ *       - Calls
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: callId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Participant removed
+ */
+router.post("/:callId/remove-participant", authMiddleware, callController.removeParticipant);
 
 module.exports = router;

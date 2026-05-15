@@ -434,81 +434,7 @@ router.put("/:conversationId", authMiddleware, conversationUpload.single("avatar
 router.put("/:conversationId/settings", authMiddleware, chatController.updateConversationSettings);
 
 // Get messages in conversation
-/**
- * @swagger
- * /api/conversations/messages:
- *   post:
- *     summary: Get messages in conversation
- *     tags:
- *       - Chat - Messages
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               conversationId:
- *                 type: string
- *                 description: Conversation UUID
- *               limit:
- *                 type: number
- *                 default: 50
- *               cursor:
- *                 type: string
- *             required:
- *               - conversationId
- *     responses:
- *       200:
- *         description: Messages retrieved
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     messages:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           messageId:
- *                             type: string
- *                           conversationId:
- *                             type: string
- *                           senderId:
- *                             type: string
- *                           content:
- *                             type: string
- *                           type:
- *                             type: string
- *                             enum: [text, image, file, system]
- *                           createdAt:
- *                             type: string
- *                             format: date-time
- *                           isEdited:
- *                             type: boolean
- *                           editedAt:
- *                             type: string
- *                             format: date-time
- *                           senderDetails:
- *                             type: object
- *                     hasMore:
- *                       type: boolean
- *                     nextCursor:
- *                       type: string
- *       400:
- *         description: Invalid request
- *       401:
- *         description: Unauthorized
- */
-router.post("/messages", authMiddleware, chatController.getMessages);
+router.get("/:conversationId/messages", authMiddleware, chatController.getMessages);
 
 // Send message
 /**
@@ -590,6 +516,66 @@ router.post(
     messageUpload.array("attachments"),
     chatController.sendMessage,
 );
+
+// Create call message bubble
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/call:
+ *   post:
+ *     summary: Create call message bubble
+ *     description: Create a message bubble recording a call after it ends
+ *     tags:
+ *       - Chat - Messages
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Conversation ID (UUID)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               callId:
+ *                 type: string
+ *                 description: Call ID (UUID)
+ *               callType:
+ *                 type: string
+ *                 enum: ['voice', 'video']
+ *                 description: Type of call
+ *               callStatus:
+ *                 type: string
+ *                 enum: ['accepted', 'cancelled', 'rejected', 'missed']
+ *                 description: Status of the call
+ *               durationSeconds:
+ *                 type: number
+ *                 description: Call duration in seconds
+ *     responses:
+ *       201:
+ *         description: Call message created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Invalid request parameters
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Conversation not found
+ */
+router.post("/:conversationId/call", authMiddleware, chatController.createCallMessage);
 
 // Mark messages as read
 /**
@@ -993,5 +979,94 @@ router.post("/:conversationId/members", authMiddleware, chatController.addMember
  *         description: Unauthorized
  */
 router.delete("/:conversationId/members", authMiddleware, chatController.removeMemberFromGroup);
+
+// Disband group
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/disband:
+ *   delete:
+ *     summary: Disband group
+ *     tags:
+ *       - Chat - Group
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Group disbanded
+ */
+router.delete("/:conversationId/disband", authMiddleware, chatController.disbandGroup);
+
+// Update member role
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/members/role:
+ *   put:
+ *     summary: Update member role
+ *     tags:
+ *       - Chat - Group Members
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               memberId:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [admin, member]
+ *     responses:
+ *       200:
+ *         description: Role updated
+ */
+router.put("/:conversationId/members/role", authMiddleware, chatController.updateMemberRole);
+
+// Forward message
+/**
+ * @swagger
+ * /api/conversations/{conversationId}/messages/forward:
+ *   post:
+ *     summary: Forward message
+ *     tags:
+ *       - Chat - Messages
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               originalConversationId:
+ *                 type: string
+ *               messageId:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Message forwarded
+ */
+router.post("/:conversationId/messages/forward", authMiddleware, chatController.forwardMessage);
 
 module.exports = router;

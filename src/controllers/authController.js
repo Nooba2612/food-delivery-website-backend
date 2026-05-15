@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require("uuid");
 
-const { createVerification } = require("@config/twilio");
+// Removed Twilio integration as per requirement
+// const { createVerification } = require("@config/twilio");
 const {
   saveOTP,
   generateOTP,
@@ -15,32 +16,59 @@ const {
   getUserByEmail,
   changePassword,
 } = require("@services/userService");
-const { generateJWT, generateTokens } = require("@helpers/jwtHelper");
+const { generateJWT, generateTokens, parseExpiry } = require("@helpers/jwtHelper");
 const { regexVietnamPhoneNumber, regexEmail } = require("@constants/constants");
 const { sendEmail } = require("@config/nodemailer");
+const { normalizePhone, getPhoneDigits, formatPhoneNumber } = require("@helpers/phoneHelper");
 
 class authController {
   async sendOTP(req, res) {
     try {
-      const { phone, country, countryCode: bodyCountryCode, resendOTP } = req.body;
+      let { phone, country, countryCode: bodyCountryCode, resendOTP } = req.body;
       const countryCode = bodyCountryCode || (country?.countryCode);
 
       if (!phone || !countryCode) {
-        res.status(400).json({ success: false, message: "Failed to send OTP" });
+        return res.status(400).json({ success: false, message: "Failed to send OTP" });
       }
+
+      phone = getPhoneDigits(phone); // Always store 9 digits in DB
 
       if (resendOTP) {
         await deleteOTP(countryCode, phone);
       }
 
       const otp = generateOTP();
+      const formattedPhone = formatPhoneNumber(phone); // +84XXXXXXXXX
+      console.log(`[OTP] Generated for ${formattedPhone}: ${otp}`);
 
-      console.log("\n\nSent OTP: ", otp);
+      await saveOTP(countryCode, phone, otp);
+      console.log(`[OTP] Saved to database for ${phone}`);
 
-      saveOTP(countryCode, phone, otp);
-      // createVerification(countryCode + phone, otp);
+      const isProd = process.env.NODE_ENV === "production";
+      
+      if (!isProd) {
+        console.log(`\n==================================================`);
+        console.log(`EATSY FOOD - OTP for ${formattedPhone}: ${otp}`);
+        console.log(`==================================================\n`);
+      } else {
+        const user = await getUserByPhoneNumber(countryCode, phone);
+        if (user && user.email) {
+            sendEmail(
+                user.email,
+                "Eatsy Verification Code",
+                `Your Eatsy verification code is: ${otp}`
+            );
+        } else {
+            console.warn(`[PROD] No email found for phone ${formattedPhone}. OTP logged to console: ${otp}`);
+        }
+      }
 
-      res.status(200).json({ success: true });
+      res.status(200).json({ 
+        success: true, 
+        message: "OTP sent successfully",
+        // In dev mode, return OTP to frontend for convenience if needed
+        otp: !isProd ? otp : undefined 
+      });
     } catch (error) {
       console.log(error);
       return res
@@ -51,7 +79,7 @@ class authController {
 
   async verifyOTP(req, res) {
     try {
-      const { otp, phone, country, countryCode: bodyCountryCode } = req.body;
+      let { otp, phone, country, countryCode: bodyCountryCode } = req.body;
       const countryCode = bodyCountryCode || (country?.countryCode);
 
       if (!otp || !phone || !countryCode) {
@@ -59,6 +87,8 @@ class authController {
           .status(400)
           .json({ success: false, message: "Missing required fields" });
       }
+
+      phone = getPhoneDigits(phone);
 
       const user = await getUserByPhoneNumber(countryCode, phone);
 
@@ -86,8 +116,9 @@ class authController {
 
   async loginUser(req, res) {
     try {
-      const {
+      let {
         phone,
+        email,
         countryCode: bodyCountryCode,
         password,
         memorizedLogin,
@@ -95,49 +126,72 @@ class authController {
       } = req.body;
       const countryCode = bodyCountryCode || (country && country.countryCode);
 
-      console.log("BODY:", req.body); // ✅ debug xem Postman gửi gì lên
-
-      if (!phone || !countryCode || !password) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Missing required fields" });
+      if (phone && countryCode) {
+        phone = getPhoneDigits(phone);
       }
 
-      const user = await getUserByPhoneNumber(countryCode, phone);
-      console.log("USER:", user);
+      console.log("LOGIN ATTEMPT:", { phone, email, countryCode });
+
+      if ((!phone || !countryCode) && !email) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Vui lòng nhập số điện thoại hoặc email" });
+      }
+
+      if (!password) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Vui lòng nhập mật khẩu" });
+      }
+
+      let user;
+      if (phone && countryCode) {
+        user = await getUserByPhoneNumber(countryCode, phone);
+      } else if (email) {
+        user = await getUserByEmail(email);
+      }
+
+      console.log("USER FOUND:", user ? user.user_id : "None");
 
       if (!user) {
         return res
           .status(404)
-          .json({ success: false, message: "User not found" });
+          .json({ success: false, message: "Tài khoản không tồn tại" });
       }
 
       const isValidPassword = await compareHashedData(password, user.password);
 
       if (!isValidPassword) {
-        return res.json({ success: false, message: "Login user failed" });
+        return res.status(401).json({ success: false, message: "Mật khẩu không chính xác" });
       }
 
-      const jwtExpiresIn =
-        memorizedLogin === "true"
-          ? process.env.JWT_EXPIRES_IN_30D
-          : process.env.JWT_EXPIRES_IN_1H;
+      const isRemembered = memorizedLogin === true || memorizedLogin === "true";
 
-      const cookieMaxAge =
-        memorizedLogin === "true"
-          ? process.env.COOKIE_MAX_AGE_30D
-          : process.env.COOKIE_MAX_AGE_1H;
+      const jwtExpiresIn = isRemembered
+          ? process.env.JWT_EXPIRES_IN_30D || "30d"
+          : process.env.JWT_EXPIRES_IN_1H || "1h";
 
-      const tokens = generateTokens(user);
+      const tokens = generateTokens(user, jwtExpiresIn, isRemembered ? "30d" : "7d");
 
-      res.cookie("token", tokens.accessToken, { maxAge: parseInt(cookieMaxAge) });
+      const cookieMaxAge = parseExpiry(jwtExpiresIn);
+
+      res.cookie("token", tokens.accessToken, { 
+        maxAge: cookieMaxAge,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production"
+      });
+      
+      res.cookie("memorizedLogin", isRemembered, { 
+        maxAge: cookieMaxAge 
+      });
 
       return res.status(200).json({
         success: true,
-        message: "User login successfully",
+        message: "Đăng nhập thành công",
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         user: user,
+        rememberMe: isRemembered,
         redirect: user.role === "Admin" ? "/admin" : "/",
       });
     } catch (error) {
@@ -152,7 +206,7 @@ class authController {
 
   async registerUser(req, res) {
     try {
-      const {
+      let {
         username,
         phone,
         countryCode: bodyCountryCode,
@@ -161,6 +215,10 @@ class authController {
         country,
       } = req.body;
       const countryCode = bodyCountryCode || (country && country.countryCode);
+
+      if (phone && countryCode) {
+        phone = getPhoneDigits(phone);
+      }
 
       console.log("BODY:", req.body); // debug
 
@@ -185,19 +243,25 @@ class authController {
           .json({ success: false, message: "Register user failed" });
       }
 
-      const jwtExpiresIn =
-        memorizedLogin === "true"
-          ? process.env.JWT_EXPIRES_IN_30D
-          : process.env.JWT_EXPIRES_IN_1H;
+      const isRemembered = memorizedLogin === true || memorizedLogin === "true";
 
-      const cookieMaxAge =
-        memorizedLogin === "true"
-          ? process.env.COOKIE_MAX_AGE_30D
-          : process.env.COOKIE_MAX_AGE_1H;
+      const jwtExpiresIn = isRemembered
+          ? process.env.JWT_EXPIRES_IN_30D || "30d"
+          : process.env.JWT_EXPIRES_IN_1H || "1h";
 
-      const tokens = generateTokens(user);
+      const tokens = generateTokens(user, jwtExpiresIn, isRemembered ? "30d" : "7d");
 
-      res.cookie("token", tokens.accessToken, { maxAge: parseInt(cookieMaxAge) });
+      const cookieMaxAge = parseExpiry(jwtExpiresIn);
+
+      res.cookie("token", tokens.accessToken, { 
+        maxAge: cookieMaxAge,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production"
+      });
+      
+      res.cookie("memorizedLogin", isRemembered, { 
+        maxAge: cookieMaxAge 
+      });
 
       return res.status(200).json({
         success: true,
@@ -205,6 +269,7 @@ class authController {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         user: user,
+        rememberMe: isRemembered,
         redirect: user.role === "Admin" ? "/admin" : "/",
       });
     } catch (error) {
@@ -248,16 +313,18 @@ class authController {
           .json({ success: false, message: "Unauthorized" });
       }
 
-      const jwtExpiresIn =
-        memorizedLogin === "true"
+      const isRemembered = memorizedLogin === true || memorizedLogin === "true";
+      const jwtExpiresIn = isRemembered
           ? process.env.JWT_EXPIRES_IN_30D
           : process.env.JWT_EXPIRES_IN_1H;
-      const token = generateJWT(user, jwtExpiresIn); // create token
+      
+      const token = generateJWT(user, jwtExpiresIn); 
       return res.json({ 
         success: true, 
         message: "Login successful!",
         accessToken: token,
-        user: user
+        user: user,
+        rememberMe: isRemembered
       });
     } catch (error) {
       console.log(error);
@@ -265,7 +332,7 @@ class authController {
   }
 
   async forgotPasswordSendOTP(req, res) {
-    const { info, countryCode, resendOTP } = req.body;
+    let { info, countryCode, resendOTP } = req.body;
     const otp = generateOTP();
 
     if (!info) {
@@ -279,14 +346,38 @@ class authController {
 
     if (info && regexVietnamPhoneNumber.test(info)) {
       try {
-        console.log("\n\nSent OTP: ", otp);
+        const rawPhone = getPhoneDigits(info);
+        const formattedPhone = formatPhoneNumber(info);
 
-        saveOTP(countryCode, info, otp);
-        // createVerification(countryCode + phone, otp);
+        await saveOTP(countryCode, rawPhone, otp);
 
-        return res.status(200).json({ success: true });
+        const isProd = process.env.NODE_ENV === "production";
+
+        if (!isProd) {
+          console.log(`\n==================================================`);
+          console.log(`EATSY FOOD - Reset OTP for ${formattedPhone}: ${otp}`);
+          console.log(`==================================================\n`);
+        } else {
+          const user = await getUserByPhoneNumber(countryCode, rawPhone);
+          if (user && user.email) {
+            sendEmail(
+              user.email,
+              "Eatsy Password Reset",
+              `Your password reset OTP is: ${otp}`
+            );
+          } else {
+            console.warn(`[PROD] No email found for phone ${formattedPhone} for reset. OTP: ${otp}`);
+          }
+        }
+
+        return res.status(200).json({ 
+            success: true, 
+            message: "OTP sent successfully",
+            otp: !isProd ? otp : undefined
+        });
       } catch (error) {
-        console.log("Send otp to phone number failed: " + error);
+        console.error("Send otp to phone number failed:", error);
+        return res.status(500).json({ success: false, message: "Failed to send OTP SMS" });
       }
     }
 
@@ -314,9 +405,8 @@ class authController {
 
   async forgotPasswordVerifyOTP(req, res) {
     try {
-      const { otp, info } = req.body;
-      console.log(otp);
-      console.log(info);
+      let { otp, info, countryCode: bodyCountryCode } = req.body;
+      const countryCode = bodyCountryCode || "+84";
 
       if (!otp || !info) {
         return res
@@ -324,7 +414,11 @@ class authController {
           .json({ success: false, message: "Missing required fields" });
       }
 
-      const isValidOTP = await checkOTP("+84", info, otp);
+      if (info && !info.includes("@")) {
+        info = getPhoneDigits(info);
+      }
+
+      const isValidOTP = await checkOTP(countryCode, info, otp);
 
       console.log("🚀  isValidOTP:", isValidOTP);
 
@@ -346,7 +440,8 @@ class authController {
   }
 
   async resetPassword(req, res) {
-    const { newPassword, info } = req.body;
+    let { newPassword, info, countryCode: bodyCountryCode } = req.body;
+    const countryCode = bodyCountryCode || "+84";
     let user;
 
     if (!newPassword || !info) {
@@ -360,7 +455,8 @@ class authController {
     }
 
     if (regexVietnamPhoneNumber.test(info)) {
-      user = await getUserByPhoneNumber("+84", info);
+      info = getPhoneDigits(info);
+      user = await getUserByPhoneNumber(countryCode, info);
     }
 
     if (!user) {
@@ -381,6 +477,8 @@ class authController {
 
   async logoutUser(req, res) {
     try {
+      res.clearCookie("token");
+      res.clearCookie("memorizedLogin");
       return res.status(200).json({ success: true, message: "Logged out successfully" });
     } catch (error) {
       console.log("LOGOUT ERROR:", error);

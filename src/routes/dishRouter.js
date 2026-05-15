@@ -1,7 +1,23 @@
 const express = require("express");
 const router = express.Router();
+const multer = require("multer");
+const { s3Storage } = require("@config/multer");
 
 const dishController = require("@controllers/dishController");
+
+// Multer middleware for dish image uploads
+const dishImageUpload = multer({
+    storage: s3Storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    fileFilter: (req, file, cb) => {
+        const allowedMimes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+        if (allowedMimes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error("Chỉ chấp nhận file ảnh: JPG, PNG, GIF, WEBP"));
+        }
+    },
+});
 
 /**
  * @swagger
@@ -106,4 +122,7 @@ router.get("/:id", dishController.getDishById);
  *         description: Dish not found
  */
 router.get("/similar/:id", dishController.getSimilarDishes);
+router.post("/", dishImageUpload.single("image"), dishController.createDish);
+router.put("/:id", dishImageUpload.single("image"), dishController.updateDish);
+router.delete("/:id", dishController.deleteDish);
 module.exports = router;
