@@ -522,7 +522,9 @@ VALUES
 ('Lê Hoàng Cường', 'lehoangcuong', 'lehoangcuong@gmail.com', '903456789', '+84', '$2a$10$dummyhash3', 'Standard', 'Customer'),
 ('Phạm Thị Dung', 'phamthidung', 'phamthidung@gmail.com', '904567890', '+84', '$2a$10$dummyhash4', 'Standard', 'Customer'),
 ('Hoàng Minh Đức', 'hoangminhduc', 'hoangminhduc@gmail.com', '905678901', '+84', '$2a$10$dummyhash5', 'Standard', 'Customer'),
-('Nguyễn Phan Minh Mẫn', 'minhman910', 'nguyenphanminhman04@gmail.com', '909943237', '+84', '$2b$10$VW2.qXqtf2sPkOy77rlA.eWEpP53pzWD4z77ZWFj9ZTeGBsq63tDC', 'Standard', 'Customer');
+('Nguyễn Phan Minh Mẫn', 'minhman910', 'nguyenphanminhman04@gmail.com', '909943237', '+84', '$2b$10$VW2.qXqtf2sPkOy77rlA.eWEpP53pzWD4z77ZWFj9ZTeGBsq63tDC', 'Standard', 'Customer'),
+('Thân Hoàng Thiên Thiên', 'thienthien114', 'thanhoangthienthien@gmail.com', '379767728', '+84', '$2b$10$VW2.qXqtf2sPkOy77rlA.eWEpP53pzWD4z77ZWFj9ZTeGBsq63tDC', 'Standard', 'Customer');
+
 
 -- Get user IDs and dish IDs for reviews
 SET @user1 = (SELECT user_id FROM Users WHERE username = 'nguyenvanan' LIMIT 1);
