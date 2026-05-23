@@ -1,9 +1,9 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
 
-const chatController = require("@controllers/chatController");
-const { authMiddleware } = require("@middlewares/authMiddleware");
-const { messageUpload, conversationUpload } = require("@config/multer");
+const chatController = require('@controllers/chatController');
+const { authMiddleware } = require('@middlewares/authMiddleware');
+const { messageUpload, conversationUpload } = require('@config/multer');
 
 /**
  * @swagger
@@ -32,7 +32,11 @@ const { messageUpload, conversationUpload } = require("@config/multer");
  *       401:
  *         description: Unauthorized - missing or invalid JWT token
  */
-router.delete("/:conversationId", authMiddleware, chatController.deleteConversation);
+router.delete(
+    '/:conversationId',
+    authMiddleware,
+    chatController.deleteConversation,
+);
 
 // Get user's conversations
 /**
@@ -80,7 +84,7 @@ router.delete("/:conversationId", authMiddleware, chatController.deleteConversat
  *       401:
  *         description: Unauthorized
  */
-router.get("/", authMiddleware, chatController.getConversations);
+router.get('/', authMiddleware, chatController.getConversations);
 
 // Get conversations by userId
 /**
@@ -136,7 +140,11 @@ router.get("/", authMiddleware, chatController.getConversations);
  *       401:
  *         description: Unauthorized
  */
-router.get("/user/:userId", authMiddleware, chatController.getConversationsByUserId);
+router.get(
+    '/user/:userId',
+    authMiddleware,
+    chatController.getConversationsByUserId,
+);
 
 // Create 1-to-1 conversation
 /**
@@ -160,7 +168,6 @@ router.get("/user/:userId", authMiddleware, chatController.getConversationsByUse
  *                 description: UUID of participant
  *     responses:
  *       200:
- *         description: Conversation created or found
  *         content:
  *           application/json:
  *             schema:
@@ -186,7 +193,7 @@ router.get("/user/:userId", authMiddleware, chatController.getConversationsByUse
  *       401:
  *         description: Unauthorized
  */
-router.post("/", authMiddleware, chatController.getOrCreateDirectConversation);
+router.post('/', authMiddleware, chatController.getOrCreateDirectConversation);
 
 // Create group conversation
 /**
@@ -249,7 +256,12 @@ router.post("/", authMiddleware, chatController.getOrCreateDirectConversation);
  *       401:
  *         description: Unauthorized
  */
-router.post("/group", authMiddleware, conversationUpload.single("avatar"), chatController.createGroupConversation);
+router.post(
+    '/group',
+    authMiddleware,
+    conversationUpload.single('avatar'),
+    chatController.createGroupConversation,
+);
 
 // Get conversation details
 /**
@@ -324,7 +336,7 @@ router.post("/group", authMiddleware, conversationUpload.single("avatar"), chatC
  *       401:
  *         description: Unauthorized
  */
-router.post("/details", authMiddleware, chatController.getConversationDetails);
+router.post('/details', authMiddleware, chatController.getConversationDetails);
 
 // Update conversation (name/avatar)
 /**
@@ -379,7 +391,12 @@ router.post("/details", authMiddleware, chatController.getConversationDetails);
  *       401:
  *         description: Unauthorized
  */
-router.put("/:conversationId", authMiddleware, conversationUpload.single("avatar"), chatController.updateConversation);
+router.put(
+    '/:conversationId',
+    authMiddleware,
+    conversationUpload.single('avatar'),
+    chatController.updateConversation,
+);
 
 // Update conversation settings (mute/pin)
 /**
@@ -431,7 +448,11 @@ router.put("/:conversationId", authMiddleware, conversationUpload.single("avatar
  *       401:
  *         description: Unauthorized
  */
-router.put("/:conversationId/settings", authMiddleware, chatController.updateConversationSettings);
+router.put(
+    '/:conversationId/settings',
+    authMiddleware,
+    chatController.updateConversationSettings,
+);
 
 // Get messages in conversation
 /**
@@ -508,7 +529,7 @@ router.put("/:conversationId/settings", authMiddleware, chatController.updateCon
  *       401:
  *         description: Unauthorized
  */
-router.post("/messages", authMiddleware, chatController.getMessages);
+router.post('/messages', authMiddleware, chatController.getMessages);
 
 // Send message
 /**
@@ -585,9 +606,9 @@ router.post("/messages", authMiddleware, chatController.getMessages);
  *         description: Unauthorized
  */
 router.post(
-    "/:conversationId/messages",
+    '/:conversationId/messages',
     authMiddleware,
-    messageUpload.array("attachments"),
+    messageUpload.array('attachments'),
     chatController.sendMessage,
 );
 
@@ -649,7 +670,11 @@ router.post(
  *       404:
  *         description: Conversation not found
  */
-router.post("/:conversationId/call", authMiddleware, chatController.createCallMessage);
+router.post(
+    '/:conversationId/call',
+    authMiddleware,
+    chatController.createCallMessage,
+);
 
 // Mark messages as read
 /**
@@ -689,7 +714,11 @@ router.post("/:conversationId/call", authMiddleware, chatController.createCallMe
  *                 success:
  *                   type: boolean
  */
-router.put("/:conversationId/messages/read", authMiddleware, chatController.markMessagesAsRead);
+router.put(
+    '/:conversationId/messages/read',
+    authMiddleware,
+    chatController.markMessagesAsRead,
+);
 
 // Edit message
 /**
@@ -746,7 +775,11 @@ router.put("/:conversationId/messages/read", authMiddleware, chatController.mark
  *       401:
  *         description: Unauthorized
  */
-router.put("/:conversationId/messages/:messageId", authMiddleware, chatController.editMessage);
+router.put(
+    '/:conversationId/messages/:messageId',
+    authMiddleware,
+    chatController.editMessage,
+);
 
 // Delete message
 /**
@@ -790,7 +823,11 @@ router.put("/:conversationId/messages/:messageId", authMiddleware, chatControlle
  *       401:
  *         description: Unauthorized
  */
-router.delete("/:conversationId/messages/:messageId", authMiddleware, chatController.deleteMessage);
+router.delete(
+    '/:conversationId/messages/:messageId',
+    authMiddleware,
+    chatController.deleteMessage,
+);
 
 // Recall message (within 5 minutes)
 /**
@@ -835,7 +872,11 @@ router.delete("/:conversationId/messages/:messageId", authMiddleware, chatContro
  *       401:
  *         description: Unauthorized
  */
-router.put("/:conversationId/messages/:messageId/recall", authMiddleware, chatController.recallMessage);
+router.put(
+    '/:conversationId/messages/:messageId/recall',
+    authMiddleware,
+    chatController.recallMessage,
+);
 
 // Mark conversation as read
 /**
@@ -856,14 +897,19 @@ router.put("/:conversationId/messages/:messageId/recall", authMiddleware, chatCo
  *     responses:
  *       200:
  *         description: Conversation marked as read
-     *         content:
-     *           application/json:
-     *             schema:
-     *               type: object
-     *               properties:
-     *                 success:
-     *                   type: boolean
-router.put("/:conversationId/read", authMiddleware, chatController.markConversationAsRead);
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ */
+router.put(
+    '/:conversationId/read',
+    authMiddleware,
+    chatController.markConversationAsRead,
+);
 
 // Add reaction to message
 /**
@@ -898,7 +944,8 @@ router.put("/:conversationId/read", authMiddleware, chatController.markConversat
  *                 description: Emoji character
  *     responses:
  *       200:
- *         description: Reaction added *         content:
+ *         description: Reaction added
+ *         content:
  *           application/json:
  *             schema:
  *               type: object
@@ -913,10 +960,15 @@ router.put("/:conversationId/read", authMiddleware, chatController.markConversat
  *                     reactions:
  *                       type: array
  *                       items:
- *                         type: object *       401:
+ *                         type: object
+ *       401:
  *         description: Unauthorized
  */
-router.post("/:conversationId/messages/:messageId/reaction", authMiddleware, chatController.addReaction);
+router.post(
+    '/:conversationId/messages/:messageId/reaction',
+    authMiddleware,
+    chatController.addReaction,
+);
 
 // Remove reaction from message
 /**
@@ -950,7 +1002,8 @@ router.post("/:conversationId/messages/:messageId/reaction", authMiddleware, cha
  *                 type: string
  *     responses:
  *       200:
- *         description: Reaction removed *         content:
+ *         description: Reaction removed
+ *         content:
  *           application/json:
  *             schema:
  *               type: object
@@ -963,10 +1016,15 @@ router.post("/:conversationId/messages/:messageId/reaction", authMiddleware, cha
  *                     messageId:
  *                       type: string
  *                     reactions:
- *                       type: array *       401:
+ *                       type: array
+ *       401:
  *         description: Unauthorized
  */
-router.delete("/:conversationId/messages/:messageId/reaction", authMiddleware, chatController.removeReaction);
+router.delete(
+    '/:conversationId/messages/:messageId/reaction',
+    authMiddleware,
+    chatController.removeReaction,
+);
 
 // Add member to group
 /**
@@ -996,16 +1054,22 @@ router.delete("/:conversationId/messages/:messageId/reaction", authMiddleware, c
  *                 description: User UUID to add
  *     responses:
  *       200:
- *         description: Member added *         content:
+ *         description: Member added
+ *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 success:
- *                   type: boolean *       401:
+ *                   type: boolean
+ *       401:
  *         description: Unauthorized
  */
-router.post("/:conversationId/members", authMiddleware, chatController.addMemberToGroup);
+router.post(
+    '/:conversationId/members',
+    authMiddleware,
+    chatController.addMemberToGroup,
+);
 
 // Remove member from group
 /**
@@ -1034,16 +1098,22 @@ router.post("/:conversationId/members", authMiddleware, chatController.addMember
  *                 type: string
  *     responses:
  *       200:
- *         description: Member removed *         content:
+ *         description: Member removed
+ *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 success:
- *                   type: boolean *       401:
+ *                   type: boolean
+ *       401:
  *         description: Unauthorized
  */
-router.delete("/:conversationId/members", authMiddleware, chatController.removeMemberFromGroup);
+router.delete(
+    '/:conversationId/members',
+    authMiddleware,
+    chatController.removeMemberFromGroup,
+);
 
 // Disband group
 /**
@@ -1065,7 +1135,11 @@ router.delete("/:conversationId/members", authMiddleware, chatController.removeM
  *       200:
  *         description: Group disbanded
  */
-router.delete("/:conversationId/disband", authMiddleware, chatController.disbandGroup);
+router.delete(
+    '/:conversationId/disband',
+    authMiddleware,
+    chatController.disbandGroup,
+);
 
 // Update member role
 /**
@@ -1099,7 +1173,11 @@ router.delete("/:conversationId/disband", authMiddleware, chatController.disband
  *       200:
  *         description: Role updated
  */
-router.put("/:conversationId/members/role", authMiddleware, chatController.updateMemberRole);
+router.put(
+    '/:conversationId/members/role',
+    authMiddleware,
+    chatController.updateMemberRole,
+);
 
 // Forward message
 /**
@@ -1132,6 +1210,10 @@ router.put("/:conversationId/members/role", authMiddleware, chatController.updat
  *       201:
  *         description: Message forwarded
  */
-router.post("/:conversationId/messages/forward", authMiddleware, chatController.forwardMessage);
+router.post(
+    '/:conversationId/messages/forward',
+    authMiddleware,
+    chatController.forwardMessage,
+);
 
 module.exports = router;

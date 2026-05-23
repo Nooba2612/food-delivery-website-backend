@@ -1,29 +1,42 @@
-const orderService = require("@services/orderService");
-const catchAsync = require("@utils/catchAsync");
-const AppError = require("@utils/AppError");
+const orderService = require('@services/orderService');
+const catchAsync = require('@utils/catchAsync');
+const AppError = require('@utils/AppError');
 
 class orderController {
     /**
      * POST /api/orders
-     * Create order from the current user's cart (COD Only)
+     * Create order from the current user's cart
      */
     createOrderFromCart = catchAsync(async (req, res, next) => {
         if (!req.user || !req.user.user_id) {
-            return next(new AppError("Bạn cần đăng nhập để thực hiện thanh toán", 401));
+            return next(
+                new AppError('Bạn cần đăng nhập để thực hiện thanh toán', 401),
+            );
         }
 
         const userId = req.user.user_id;
-        const { address_id, note, voucher_code } = req.body;
+        const { address_id, note, voucher_code, payment_method } = req.body;
 
         if (!address_id) {
-            return next(new AppError("Vui lòng cung cấp địa chỉ giao hàng", 400));
+            return next(
+                new AppError('Vui lòng cung cấp địa chỉ giao hàng', 400),
+            );
+        }
+
+        if (payment_method === 'BANK_TRANSFER') {
+            return next(
+                new AppError(
+                    'Vui lòng tạo phiên thanh toán trước khi tạo đơn hàng',
+                    400,
+                ),
+            );
         }
 
         const order = await orderService.createOrderFromCart(userId, {
             address_id,
             note,
             voucher_code,
-            payment_method: "COD"
+            payment_method,
         });
 
         res.status(201).json({
@@ -75,7 +88,7 @@ class orderController {
         res.status(200).json({
             success: true,
             data: results,
-            message: "Items added to cart",
+            message: 'Items added to cart',
         });
     });
 }

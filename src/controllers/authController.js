@@ -47,12 +47,13 @@ class authController {
 
       if (!twilioResult.success) {
         // If it's a configuration issue (dummy credentials), we might still want fallback in dev
-        if (twilioResult.error === "Twilio misconfigured" && process.env.NODE_ENV !== "production") {
-            console.warn("Twilio misconfigured, using development OTP fallback");
+        if (process.env.NODE_ENV !== "production") {
+            console.warn("⚠️  Twilio failed in development mode, using OTP fallback");
+            console.log(`✅ Development OTP for ${formattedPhone}: ${otp}`);
             return res.status(200).json({
                 success: true,
-                message: "Development OTP fallback",
-                otp: otp,
+                message: "Development OTP sent (check console)",
+                otp: otp, // Only in dev mode
             });
         }
         
@@ -333,12 +334,13 @@ class authController {
         const twilioResult = await createVerification(formattedPhone, otp, "reset");
 
         if (!twilioResult.success) {
-          if (twilioResult.error === "Twilio misconfigured" && process.env.NODE_ENV !== "production") {
-              console.warn("Twilio misconfigured, using development OTP fallback");
+          if (process.env.NODE_ENV !== "production") {
+              console.warn("⚠️  Twilio failed in development mode, using OTP fallback");
+              console.log(`✅ Development Reset OTP for ${formattedPhone}: ${otp}`);
               return res.status(200).json({
                   success: true,
-                  message: "Development OTP fallback",
-                  otp: otp,
+                  message: "Development OTP sent (check console)",
+                  otp: otp, // Only in dev mode
               });
           }
           
