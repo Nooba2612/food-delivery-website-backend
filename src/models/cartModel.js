@@ -13,7 +13,7 @@ const cartModel = sequelize.define(
             allowNull: false,
             unique: true,
             references: {
-                model: "Accounts",
+                model: "Users",
                 key: "user_id",
             },
         },
