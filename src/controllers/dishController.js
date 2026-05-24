@@ -47,13 +47,6 @@ class dishController {
         order: [["price", sort || "ASC"]],
       });
 
-      if (!dishes || dishes.length === 0) {
-        return res.status(404).json({ 
-          success: false, 
-          message: "No dishes found" 
-        });
-      }
-
       return res.status(200).json({
         success: true,
         data: dishes

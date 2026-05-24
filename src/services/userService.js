@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const { Op } = require("sequelize");
+const { v4: uuidv4 } = require("uuid");
 
 const { addressModel, userModel } = require("@models");
 
@@ -99,6 +100,7 @@ const createUser = async (username, type_login, country_code, phone_number, pass
     try {
         const digits = getPhoneDigits(phone_number);
         const newUser = await userModel.create({
+            userId: uuidv4(),
             username,
             typeLogin: type_login,
             phoneNumber: digits,

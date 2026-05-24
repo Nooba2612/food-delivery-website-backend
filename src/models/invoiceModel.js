@@ -21,7 +21,7 @@ const invoiceModel = sequelize.define(
             type: DataTypes.STRING(255),
             allowNull: false,
             references: {
-                model: "Accounts",
+                model: "Users",
                 key: "user_id",
             },
             onDelete: "CASCADE",

@@ -5,7 +5,7 @@ const UserVoucher = sequelize.define(
     "UserVoucher",
     {
         account_id: {
-            type: DataTypes.UUID,
+            type: DataTypes.STRING(255),
             allowNull: false,
             primaryKey: true,
             references: {
@@ -14,7 +14,7 @@ const UserVoucher = sequelize.define(
             },
         },
         voucher_id: {
-            type: DataTypes.UUID,
+            type: DataTypes.STRING(255),
             allowNull: false,
             primaryKey: true,
             references: {

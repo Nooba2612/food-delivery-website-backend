@@ -11,6 +11,7 @@
         "watch": "webpack --watch",
         "serve": "webpack serve",
         "lint": "eslint .",
+        "seed:mysql": "node src/scripts/seed_mysql_sample_data.js",
         "delete:dynamodb": "node src/config/deleteDynamoDBTables.js",
         "setup:dynamodb": "node src/config/initializeDynamoDB.js",
         "seed:dynamodb": "node src/config/seedDynamoDB.js"
