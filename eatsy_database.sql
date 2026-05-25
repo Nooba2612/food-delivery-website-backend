@@ -1,8 +1,11 @@
 -- Create database
 DROP DATABASE IF EXISTS eatsy_food;
-CREATE DATABASE eatsy_food;
+CREATE DATABASE eatsy_food
+CHARACTER SET utf8mb4
+COLLATE utf8mb4_unicode_ci;
 SHOW DATABASES;
 USE eatsy_food;
+SET NAMES utf8mb4;
 
 
 

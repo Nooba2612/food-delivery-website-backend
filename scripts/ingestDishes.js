@@ -3,50 +3,33 @@
  *  REAL DATA INGESTION SCRIPT — ingestDishes.js
  * ============================================================
  *  Mục đích: Lấy dữ liệu THẬT từ bảng MySQL 'Dishes' thông qua
- *  Sequelize, tạo vector embedding và lưu vào Qdrant Cloud.
+ *  Sequelize, tạo vector embedding local và lưu vào Qdrant.
  * ============================================================
  */
 
 require("dotenv").config();
 require("@babel/register"); // Cho phép require các file dùng ES6/Babel trong project
 
-const { GoogleGenAI } = require("@google/genai");
-const { QdrantClient } = require("@qdrant/js-client-rest");
-
 // Import models từ file index tập trung để đảm bảo đã load quan hệ (Associations)
 const { dishModel: Dish, categoryModel: Category } = require("../src/models/index");
+const {
+    buildDishEmbeddingText,
+    COLLECTION_NAME,
+    generateEmbeddingFromText,
+    getQdrantClient,
+} = require("../src/services/semanticDishSearchService");
 
 // ─── Khởi tạo Clients ───────────────────────────────────────
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-const qdrant = new QdrantClient({
-    url: process.env.QDRANT_URL,
-    apiKey: process.env.QDRANT_API_KEY || undefined,
-});
+const qdrant = getQdrantClient();
 
 // ─── Hằng số ────────────────────────────────────────────────
-const COLLECTION_NAME = "eatsy_dishes";
-const EMBEDDING_MODEL = "gemini-embedding-001";
-const VECTOR_SIZE = 3072;
+const VECTOR_SIZE = parseInt(process.env.QDRANT_VECTOR_SIZE || "3072", 10);
 
 /**
  * Tạo embedding từ dữ liệu thật của món ăn
  */
 async function generateEmbedding(dish) {
-    // Kết hợp các trường semantic quan trọng từ DB
-    const textToEmbed =
-        `Tên món: ${dish.name}. ` +
-        `Thương hiệu: ${dish.brand || "Eatsy"}. ` +
-        `Danh mục: ${dish.Category?.category_name || "Món ăn"}. ` +
-        `Mô tả: ${dish.description || "Ngon và bổ dưỡng"}. ` +
-        `Giá: ${dish.price} VNĐ.`;
-
-    const response = await ai.models.embedContent({
-        model: EMBEDDING_MODEL,
-        contents: textToEmbed,
-    });
-
-    return response.embeddings[0].values;
+    return generateEmbeddingFromText(buildDishEmbeddingText(dish));
 }
 
 /**
@@ -74,15 +57,15 @@ async function ensureCollectionExists() {
  * CHÍNH: Lấy dữ liệu từ MySQL và nạp vào Qdrant
  */
 async function ingestRealData() {
-    console.log("🚀 Bắt đầu lấy dữ liệu THẬT từ MySQL và nạp vào Qdrant...\n");
+    console.log("🚀 Bắt đầu lấy dữ liệu THẬT từ MySQL, tạo embedding local và nạp vào Qdrant...\n");
 
     try {
         await ensureCollectionExists();
 
         // Bước 1: Query toàn bộ món ăn từ SQL (kèm theo Category để lấy tên danh mục)
         const realDishes = await Dish.findAll({
-            include: [{ model: Category, as: 'Category' }],
-            where: { status: 'active' } // Chỉ lấy món đang kinh doanh
+            include: [{ model: Category, as: "category" }],
+            where: { status: "active", available: true },
         });
 
         if (realDishes.length === 0) {
@@ -115,10 +98,10 @@ async function ingestRealData() {
                         name: dish.name,
                         brand: dish.brand,
                         price: parseFloat(dish.price),
-                        category: dish.Category?.category_name || "N/A",
+                        category: dish.category?.name || "N/A",
                         description: dish.description,
                         image_url: dish.thumbnail_path,
-                        rating: parseFloat(dish.rating_avg),
+                        rating: parseFloat(dish.rating_avg || 0),
                     },
                 });
 
