@@ -12,9 +12,15 @@ const sequelize = new Sequelize(dbName, dbUser, dbPassword, {
     port: dbPort,
     dialect: dbDialect,
     logging: console.log,
+    dialectOptions: {
+        charset: "utf8mb4",
+    },
+    charset: "utf8mb4",
     define: {
         underscored: true,
         timestamps: true,
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
     }
 });
 

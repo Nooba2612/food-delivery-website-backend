@@ -2,6 +2,16 @@ const OpenAI = require("openai");
 const { Op } = require("sequelize");
 
 const { dishModel, categoryModel } = require("@models");
+const {
+    isSemanticSearchEnabled,
+    searchDishIdsBySemanticQuery,
+} = require("@services/semanticDishSearchService");
+const {
+    buildMemorySummary,
+    buildRetrievalContext,
+    recordAssistantTurn,
+    recordUserTurn,
+} = require("@services/memoryEngine");
 
 const openai = new OpenAI({
     apiKey: process.env.FREELLMAPI_API_KEY,
@@ -11,7 +21,20 @@ const openai = new OpenAI({
 const CHAT_MODEL = process.env.FREELLMAPI_MODEL || "google/gemini-2.5-flash-lite";
 const BACKEND_URL = process.env.BASE_URL || "http://localhost:5678";
 const TOP_K_RESULTS = 6;
+const CANDIDATE_POOL_SIZE = 12;
 const SLIDING_WINDOW_SIZE = 5;
+const SEMANTIC_WEIGHT = 0.55;
+const KEYWORD_WEIGHT = 0.3;
+const POPULARITY_WEIGHT = 0.1;
+const QUALITY_WEIGHT = 0.05;
+
+const DISH_INCLUDE = [
+    {
+        model: categoryModel,
+        as: "category",
+        attributes: ["category_id", "name"],
+    },
+];
 
 function extractKeywords(text) {
     return [
@@ -26,22 +49,100 @@ function extractKeywords(text) {
     ].slice(0, 12);
 }
 
-async function retrieveRelevantDishes(message) {
+async function retrieveRelevantDishes(retrievalQuery) {
+    const [semanticResult, keywordResult] = await Promise.all([
+        retrieveSemanticDishes(retrievalQuery),
+        retrieveKeywordDishes(retrievalQuery),
+    ]);
+
+    const rankedDishes = rankDishCandidates({
+        keywords: extractKeywords(retrievalQuery),
+        keywordDishes: keywordResult.dishes,
+        semanticDishes: semanticResult.dishes,
+        semanticMatches: semanticResult.matches,
+    });
+
+    if (rankedDishes.length > 0) {
+        return {
+            dishes: rankedDishes,
+            retrievalMode: semanticResult.matches.length > 0 && keywordResult.dishes.length > 0
+                ? "hybrid_rerank"
+                : semanticResult.matches.length > 0
+                    ? "semantic_rerank"
+                    : "keyword_rerank",
+        };
+    }
+
+    return {
+        dishes: [],
+        retrievalMode: semanticResult.error ? "keyword_fallback_empty" : "no_match",
+    };
+}
+
+async function retrieveSemanticDishes(message) {
+    if (!isSemanticSearchEnabled()) {
+        return {
+            dishes: [],
+            matches: [],
+            error: null,
+        };
+    }
+
+    try {
+        const semanticMatches = await searchDishIdsBySemanticQuery(message, CANDIDATE_POOL_SIZE);
+        if (semanticMatches.length === 0) {
+            return {
+                dishes: [],
+                matches: [],
+                error: null,
+            };
+        }
+
+        const dishIds = semanticMatches.map((match) => match.dishId);
+        const dishes = await dishModel.findAll({
+            include: DISH_INCLUDE,
+            where: {
+                dish_id: { [Op.in]: dishIds },
+                status: "active",
+                available: true,
+            },
+            subQuery: false,
+        });
+
+        const dishMap = new Map(
+            dishes.map((dish) => {
+                const plainDish = dish.get ? dish.get({ plain: true }) : dish;
+                return [plainDish.dish_id, dish];
+            }),
+        );
+
+        return {
+            dishes: dishIds.map((dishId) => dishMap.get(dishId)).filter(Boolean),
+            matches: semanticMatches,
+            error: null,
+        };
+    } catch (error) {
+        console.warn("[ChatbotController] Semantic retrieval failed, fallback to keyword search:", error.message);
+        return {
+            dishes: [],
+            matches: [],
+            error,
+        };
+    }
+}
+
+async function retrieveKeywordDishes(message) {
     const keywords = extractKeywords(message);
 
     if (keywords.length === 0) {
-        return dishModel.findAll({
-            include: [
-                {
-                    model: categoryModel,
-                    as: "category",
-                    attributes: ["category_id", "name"],
-                },
-            ],
+        const dishes = await dishModel.findAll({
+            include: DISH_INCLUDE,
             where: { status: "active", available: true },
             order: [["sold_count", "DESC"]],
-            limit: TOP_K_RESULTS,
+            limit: CANDIDATE_POOL_SIZE,
         });
+
+        return { dishes, keywords };
     }
 
     const likeConditions = keywords.flatMap((keyword) => ([
@@ -51,23 +152,142 @@ async function retrieveRelevantDishes(message) {
         { "$category.name$": { [Op.like]: `%${keyword}%` } },
     ]));
 
-    return dishModel.findAll({
-        include: [
-            {
-                model: categoryModel,
-                as: "category",
-                attributes: ["category_id", "name"],
-            },
-        ],
+    const dishes = await dishModel.findAll({
+        include: DISH_INCLUDE,
         where: {
             status: "active",
             available: true,
             [Op.or]: likeConditions,
         },
         order: [["sold_count", "DESC"]],
-        limit: TOP_K_RESULTS,
+        limit: CANDIDATE_POOL_SIZE,
         subQuery: false,
     });
+
+    return { dishes, keywords };
+}
+
+function normalizeScore(value, min, max) {
+    if (!Number.isFinite(value)) {
+        return 0;
+    }
+
+    if (max <= min) {
+        return value > 0 ? 1 : 0;
+    }
+
+    return Math.max(0, Math.min(1, (value - min) / (max - min)));
+}
+
+function clampScore(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function buildSearchableText(dish) {
+    const plainDish = dish.get ? dish.get({ plain: true }) : dish;
+    const tagText = Array.isArray(plainDish.tags) ? plainDish.tags.join(" ") : "";
+
+    return [
+        plainDish.name,
+        plainDish.brand,
+        plainDish.description,
+        plainDish.category?.name,
+        tagText,
+    ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+}
+
+function computeKeywordScore(dish, keywords) {
+    if (!keywords.length) {
+        return 0.35;
+    }
+
+    const text = buildSearchableText(dish);
+    let weightedHits = 0;
+
+    for (const keyword of keywords) {
+        const occurrences = text.split(keyword.toLowerCase()).length - 1;
+        weightedHits += Math.min(occurrences, 3);
+    }
+
+    const maxPossibleHits = keywords.length * 3;
+    return clampScore(weightedHits / maxPossibleHits);
+}
+
+function computePopularityScore(dish) {
+    const plainDish = dish.get ? dish.get({ plain: true }) : dish;
+    const soldCount = Number(plainDish.sold_count || 0);
+    const featuredBoost = plainDish.is_featured ? 0.15 : 0;
+    return clampScore(Math.log10(soldCount + 1) / 4 + featuredBoost);
+}
+
+function computeQualityScore(dish) {
+    const plainDish = dish.get ? dish.get({ plain: true }) : dish;
+    const rating = Number(plainDish.rating_avg || 0) / 5;
+    const ratingCountBoost = Math.min(Number(plainDish.rating_count || 0) / 50, 0.2);
+    return clampScore(rating * 0.8 + ratingCountBoost);
+}
+
+function rankDishCandidates({ semanticDishes, semanticMatches, keywordDishes, keywords }) {
+    const semanticMap = new Map(semanticMatches.map((match) => [match.dishId, Number(match.score || 0)]));
+    const allDishes = [...semanticDishes, ...keywordDishes];
+    const uniqueDishMap = new Map();
+
+    for (const dish of allDishes) {
+        const plainDish = dish.get ? dish.get({ plain: true }) : dish;
+        if (!uniqueDishMap.has(plainDish.dish_id)) {
+            uniqueDishMap.set(plainDish.dish_id, dish);
+        }
+    }
+
+    const uniqueDishes = Array.from(uniqueDishMap.values());
+    const semanticScores = uniqueDishes.map((dish) => {
+        const plainDish = dish.get ? dish.get({ plain: true }) : dish;
+        return semanticMap.get(plainDish.dish_id) || 0;
+    });
+
+    const maxSemanticScore = Math.max(...semanticScores, 0);
+    const minSemanticScore = Math.min(...semanticScores, 0);
+
+    return uniqueDishes
+        .map((dish) => {
+            const plainDish = dish.get ? dish.get({ plain: true }) : dish;
+            const rawSemanticScore = semanticMap.get(plainDish.dish_id) || 0;
+            const semanticScore = normalizeScore(rawSemanticScore, minSemanticScore, maxSemanticScore);
+            const keywordScore = computeKeywordScore(dish, keywords);
+            const popularityScore = computePopularityScore(dish);
+            const qualityScore = computeQualityScore(dish);
+
+            const finalScore =
+                semanticScore * SEMANTIC_WEIGHT +
+                keywordScore * KEYWORD_WEIGHT +
+                popularityScore * POPULARITY_WEIGHT +
+                qualityScore * QUALITY_WEIGHT;
+
+            return {
+                dish,
+                finalScore,
+                semanticScore,
+                keywordScore,
+                popularityScore,
+                qualityScore,
+            };
+        })
+        .sort((left, right) => {
+            if (right.finalScore !== left.finalScore) {
+                return right.finalScore - left.finalScore;
+            }
+
+            if (right.semanticScore !== left.semanticScore) {
+                return right.semanticScore - left.semanticScore;
+            }
+
+            return right.keywordScore - left.keywordScore;
+        })
+        .slice(0, TOP_K_RESULTS)
+        .map((entry) => entry.dish);
 }
 
 function buildSystemInstruction(dishes) {
@@ -114,6 +334,41 @@ Dữ liệu món ăn:
 ${dishContext}`;
 }
 
+function buildMemoryAwareSystemInstruction(dishes, memorySummary) {
+    const baseInstruction = buildSystemInstruction(dishes);
+
+    if (!memorySummary) {
+        return baseInstruction;
+    }
+
+    return `${baseInstruction}
+
+Ngữ cảnh bộ nhớ hội thoại:
+${memorySummary}
+
+Khi người dùng hỏi tiếp kiểu tham chiếu ("món đó", "món đầu", "loại trên"), hãy ưu tiên hiểu theo ngữ cảnh bộ nhớ ở trên.`;
+}
+
+function buildDishCardPayload(dish) {
+    const plainDish = dish.get ? dish.get({ plain: true }) : dish;
+    const imagePath = plainDish.thumbnail_path || plainDish.image_url || "";
+    const imageUrl = imagePath.startsWith("http")
+        ? imagePath
+        : `${BACKEND_URL}${imagePath}`;
+
+    return {
+        id: plainDish.dish_id,
+        name: plainDish.name || "Món ăn",
+        price: Number(plainDish.price || 0),
+        image: imageUrl,
+        rating: Number(plainDish.rating_avg || 0),
+    };
+}
+
+function buildFallbackDishCards(dishes) {
+    return dishes.slice(0, 3).map(buildDishCardPayload);
+}
+
 function formatHistoryForOpenAI(chatHistory) {
     return chatHistory
         .filter((msg) => msg?.role && msg?.content)
@@ -126,7 +381,7 @@ function formatHistoryForOpenAI(chatHistory) {
 
 const chat = async (req, res) => {
     try {
-        const { message, chatHistory = [] } = req.body;
+        const { message, chatHistory = [], sessionId = "" } = req.body;
 
         if (!message || typeof message !== "string" || message.trim() === "") {
             return res.status(400).json({
@@ -150,8 +405,15 @@ const chat = async (req, res) => {
         }
 
         const userMessage = message.trim();
-        const relevantDishes = await retrieveRelevantDishes(userMessage);
-        const systemInstruction = buildSystemInstruction(relevantDishes);
+        recordUserTurn(sessionId, userMessage);
+        const memoryContext = buildRetrievalContext({
+            sessionId,
+            message: userMessage,
+            chatHistory,
+        });
+        const { dishes: relevantDishes, retrievalMode } = await retrieveRelevantDishes(memoryContext.retrievalQuery);
+        const memorySummary = buildMemorySummary(sessionId);
+        const systemInstruction = buildMemoryAwareSystemInstruction(relevantDishes, memorySummary);
         const history = formatHistoryForOpenAI(chatHistory);
 
         const completion = await openai.chat.completions.create({
@@ -166,16 +428,24 @@ const chat = async (req, res) => {
         });
 
         const aiReply = completion.choices?.[0]?.message?.content?.trim();
+        const fallbackCards = buildFallbackDishCards(relevantDishes);
+        recordAssistantTurn(sessionId, aiReply || "", fallbackCards);
 
         return res.status(200).json({
             success: true,
             data: {
                 reply: aiReply || "Mình chưa tạo được câu trả lời. Bạn thử hỏi lại nhé.",
+                cards: fallbackCards,
                 meta: {
                     dishes_retrieved: relevantDishes.length,
                     history_window: history.length,
                     model: CHAT_MODEL,
                     provider: "freellmapi",
+                    semantic_enabled: isSemanticSearchEnabled(),
+                    retrieval_mode: retrievalMode,
+                    retrieval_query: memoryContext.retrievalQuery,
+                    memory_summary: memorySummary,
+                    session_id: sessionId || null,
                 },
             },
         });
