@@ -1,11 +1,17 @@
 require("dotenv").config();
 const express = require("express");
 const swaggerUi = require("swagger-ui-express");
-const swaggerSpecs = require("@config/swagger");
+const swaggerSpecs = require("@core/config/swagger");
 
-const routes = require("@routes/index");
-const useMiddlewares = require("@middlewares/index");
-const { connectToDatabase } = require("@config/sequelize");
+require("./models");
+
+const routes = require("./routes");
+const useMiddlewares = require("@core/middlewares/index");
+const {
+  connectToDatabase,
+  sequelize,
+} = require("@core/config/sequelize");
+const { registerChatSocketListeners } = require("@modules/Chat/socket.listeners");
 
 const app = express();
 
@@ -16,26 +22,31 @@ useMiddlewares(app);
 
 // Swagger UI
 app.use(
-    "/api-docs",
-    swaggerUi.serve,
-    swaggerUi.setup(swaggerSpecs, {
-        swaggerOptions: {
-            persistAuthorization: true,
-        },
-    }),
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpecs, {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+  }),
 );
 
 // routing
 routes(app);
 
 // Global Error Handler
-const errorHandler = require("./middlewares/errorHandler");
+const errorHandler = require("@core/middlewares/errorHandler");
 app.use(errorHandler);
 
 // Store io instance globally for services to access
 app.set("io", null);
 
-// connect to the database
-connectToDatabase();
+const appReady = (async () => {
+  await connectToDatabase();
+  await sequelize.sync();
+  registerChatSocketListeners();
+})();
+
+app.set("appReady", appReady);
 
 module.exports = app;

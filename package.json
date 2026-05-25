@@ -11,10 +11,12 @@
     "watch": "webpack --watch",
     "serve": "webpack serve",
     "lint": "eslint .",
+    "seed:mysql": "docker exec -i eatsy_mysql mysql -uroot -prootpassword < eatsy_database.sql",
+    "create:admin": "babel-node create_admin.js",
     "ingest:dishes": "node scripts/ingestDishes.js",
-    "delete:dynamodb": "node src/config/deleteDynamoDBTables.js",
-    "setup:dynamodb": "node src/config/initializeDynamoDB.js",
-    "seed:dynamodb": "node src/config/seedDynamoDB.js"
+    "delete:dynamodb": "node src/core/config/deleteDynamoDBTables.js",
+    "setup:dynamodb": "node src/core/config/initializeDynamoDB.js",
+    "seed:dynamodb": "node src/core/config/seedDynamoDB.js"
   },
   "dependencies": {
     "@google/genai": "^1.51.0",
