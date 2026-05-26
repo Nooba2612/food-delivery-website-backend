@@ -16,6 +16,7 @@ router.delete("/employees/:id", AdminController.deleteEmployee);
 // Product management
 router.get("/products/stats", AdminController.getProductStats);
 router.get("/products", AdminController.getProducts);
+router.get("/debug/dish-sync/:id", AdminController.getDishSyncDebug);
 router.post("/products", AdminController.addProduct);
 router.put("/products/:id", AdminController.updateProduct);
 router.delete("/products/:id", AdminController.deleteProduct);

@@ -4,6 +4,11 @@ const { v4: uuidv4 } = require("uuid");
 const authUserService = require("@modules/Auth/user.service");
 const dishService = require("@modules/Dish/dish.service");
 const categoryService = require("@modules/Dish/category.service");
+const {
+  buildDishPayload,
+  getDishPointFromSemanticIndex,
+  isSemanticSearchEnabled,
+} = require("@modules/Dish/semanticSearch.service");
 const orderService = require("@modules/Order/order.service");
 const { normalizePhone } = require("@core/helpers/phoneHelper");
 const AppError = require("@core/utils/AppError");
@@ -18,8 +23,19 @@ const slugify = (str) =>
     .replace(/-+/g, "-")
     .trim();
 
+function buildDiffEntry(field, mysqlValue, qdrantValue) {
+  const left = mysqlValue ?? null;
+  const right = qdrantValue ?? null;
+  return {
+    field,
+    mysql: left,
+    qdrant: right,
+    matches: JSON.stringify(left) === JSON.stringify(right),
+  };
+}
+
 const AdminService = {
-  async updateOrderStatus(orderId, status, io) {
+  async updateOrderStatus(orderId, status) {
     const updatedOrder = await orderService.updateOrderStatus(orderId, status);
     const summary = await orderService.getOrderSummary(orderId);
 
@@ -108,7 +124,8 @@ const AdminService = {
       isOnline: true,
     });
 
-    const { password: _, ...employeeData } = newEmployee.toJSON();
+    const employeeData = newEmployee.toJSON();
+    delete employeeData.password;
     return employeeData;
   },
 
@@ -306,6 +323,93 @@ const AdminService = {
 
   async getCategories() {
     return categoryService.getAllCategories();
+  },
+
+  async getDishSyncDebug(dishId) {
+    const dish = await dishService.findDishById(dishId);
+    if (!dish) {
+      throw new AppError("Không tìm thấy sản phẩm", 404);
+    }
+
+    const plainDish = dish.get({ plain: true });
+    const category = plainDish.category_id
+      ? await categoryService.getCategoryById(plainDish.category_id)
+      : null;
+
+    const mysqlDish = {
+      ...plainDish,
+      category: category
+        ? {
+            category_id: category.category_id,
+            name: category.name,
+          }
+        : null,
+    };
+
+    const expectedPayload = buildDishPayload(mysqlDish);
+
+    let qdrantLookup = {
+      skipped: !isSemanticSearchEnabled(),
+      reason: isSemanticSearchEnabled() ? null : "semantic_search_disabled",
+      point: null,
+      error: null,
+    };
+
+    if (isSemanticSearchEnabled()) {
+      try {
+        qdrantLookup = {
+          ...(await getDishPointFromSemanticIndex(dishId)),
+          error: null,
+        };
+      } catch (error) {
+        qdrantLookup = {
+          skipped: false,
+          reason: null,
+          point: null,
+          error: error?.data?.status?.error || error.message,
+        };
+      }
+    }
+
+    const qdrantPayload = qdrantLookup.point?.payload || null;
+    const comparisons = [
+      buildDiffEntry("dish_id", expectedPayload.dish_id, qdrantPayload?.dish_id),
+      buildDiffEntry("name", expectedPayload.name, qdrantPayload?.name),
+      buildDiffEntry("brand", expectedPayload.brand, qdrantPayload?.brand),
+      buildDiffEntry("price", expectedPayload.price, qdrantPayload?.price),
+      buildDiffEntry("category", expectedPayload.category, qdrantPayload?.category),
+      buildDiffEntry(
+        "description",
+        expectedPayload.description,
+        qdrantPayload?.description,
+      ),
+      buildDiffEntry("image_url", expectedPayload.image_url, qdrantPayload?.image_url),
+      buildDiffEntry("rating", expectedPayload.rating, qdrantPayload?.rating),
+      buildDiffEntry("status", expectedPayload.status, qdrantPayload?.status),
+      buildDiffEntry(
+        "available",
+        expectedPayload.available,
+        qdrantPayload?.available,
+      ),
+    ];
+
+    return {
+      dish_id: dishId,
+      semantic_enabled: isSemanticSearchEnabled(),
+      mysql: mysqlDish,
+      expected_qdrant_payload: expectedPayload,
+      qdrant: {
+        found: Boolean(qdrantLookup.point),
+        point_id: qdrantLookup.point?.id || null,
+        payload: qdrantPayload,
+        skipped: Boolean(qdrantLookup.skipped),
+        reason: qdrantLookup.reason || null,
+        error: qdrantLookup.error || null,
+      },
+      comparisons,
+      all_fields_match:
+        Boolean(qdrantPayload) && comparisons.every((item) => item.matches),
+    };
   },
 };
 

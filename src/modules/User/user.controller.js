@@ -4,6 +4,12 @@ const {
   changePassword,
   findUser,
 } = require("./user.service");
+const {
+  addFavoriteDish,
+  getFavoriteDishes,
+  isFavoriteDish,
+  removeFavoriteDish,
+} = require("./favorite.service");
 const { uploadToS3 } = require("@core/config/multer");
 const {
   getAddressesByUserId,
@@ -269,7 +275,7 @@ class UserController {
   };
 
   // POST /orders - Place a new order
-  placeOrder = catchAsync(async (req, res, next) => {
+  placeOrder = catchAsync(async (req, res) => {
     const userId = req.user.user_id;
     const orderData = req.body;
 
@@ -284,7 +290,7 @@ class UserController {
   });
 
   // GET /orders/:id - Get single order details
-  getOrderDetails = catchAsync(async (req, res, next) => {
+  getOrderDetails = catchAsync(async (req, res) => {
     const userId = req.user.user_id;
     const { id } = req.params;
     const result = await require("@modules/Order/order.service").getOrderById(
@@ -294,6 +300,60 @@ class UserController {
     res.json({
       success: true,
       data: result,
+    });
+  });
+
+  getFavorites = catchAsync(async (req, res) => {
+    const userId = req.user.user_id;
+    const favorites = await getFavoriteDishes(userId);
+
+    res.json({
+      success: true,
+      data: favorites,
+    });
+  });
+
+  addFavorite = catchAsync(async (req, res) => {
+    const userId = req.user.user_id;
+    const { dish_id: dishId } = req.body;
+
+    if (!dishId) {
+      throw new AppError("Thiếu dish_id", 400);
+    }
+
+    const result = await addFavoriteDish(userId, dishId);
+    res.status(201).json({
+      success: true,
+      message: "Đã thêm vào món yêu thích tạm thời",
+      data: result,
+    });
+  });
+
+  removeFavorite = catchAsync(async (req, res) => {
+    const userId = req.user.user_id;
+    const { dishId } = req.params;
+    const result = await removeFavoriteDish(userId, dishId);
+
+    res.json({
+      success: true,
+      message: result.removed
+        ? "Đã xóa khỏi món yêu thích tạm thời"
+        : "Món này chưa có trong danh sách yêu thích",
+      data: result,
+    });
+  });
+
+  getFavoriteStatus = catchAsync(async (req, res) => {
+    const userId = req.user.user_id;
+    const { dishId } = req.params;
+    const favorite = await isFavoriteDish(userId, dishId);
+
+    res.json({
+      success: true,
+      data: {
+        dish_id: dishId,
+        is_favorite: favorite,
+      },
     });
   });
 }

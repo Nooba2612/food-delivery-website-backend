@@ -53,6 +53,7 @@
     "passport-facebook": "^3.0.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-local": "^1.0.0",
+    "redis": "^4.7.1",
     "sequelize": "^6.37.3",
     "socket.io": "^4.7.2",
     "swagger-jsdoc": "^6.2.8",
