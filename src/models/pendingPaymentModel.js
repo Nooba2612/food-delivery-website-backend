@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('@config/sequelize');
+const { sequelize } = require('@core/config/sequelize');
 
 const pendingPaymentModel = sequelize.define(
     'PendingPayment',
