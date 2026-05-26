@@ -1,6 +1,6 @@
-const paymentService = require('@services/paymentService');
-const catchAsync = require('@utils/catchAsync');
-const AppError = require('@utils/AppError');
+const paymentService = require('@modules/User/paymentService');
+const catchAsync = require('@core/utils/catchAsync');
+const AppError = require('@core/utils/AppError');
 
 class paymentController {
     /**

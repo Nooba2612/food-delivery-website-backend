@@ -1,30 +1,29 @@
-const { sequelize } = require('@config/sequelize');
+// Import models from their respective modules
+const userModel = require('@modules/Auth/models/userModel');
+const otpModel = require('@modules/Auth/models/otpModel');
 
-const userModel = require('@models/userModel');
-const dishModel = require('@models/dishModel');
-const orderItemModel = require('@models/orderItemModel');
-const cartItemModel = require('@models/cartItemModel');
-const orderModel = require('@models/orderModel');
-const cartModel = require('@models/cartModel');
-const categoryModel = require('@models/categoryModel');
-const customerModel = require('@models/customerModel');
-const invoiceItemModel = require('@models/invoiceItemModel');
-const invoiceModel = require('@models/invoiceModel');
-const voucherModel = require('@models/voucherModel');
-const otpModel = require('@models/otpModel');
-const reviewModel = require('@models/reviewModel');
-const accountVoucher = require('@models/userVoucher');
-const addressModel = require('@models/addressModel');
-const supportConversationModel = require('@models/supportConversationModel');
-const supportMessageModel = require('@models/supportMessageModel');
+const dishModel = require('@modules/Dish/models/dishModel');
+const categoryModel = require('@modules/Dish/models/categoryModel');
+
+const orderItemModel = require('@modules/Order/models/orderItemModel');
+const cartItemModel = require('@modules/Cart/models/cartItemModel');
+const orderModel = require('@modules/Order/models/orderModel');
+const cartModel = require('@modules/Cart/models/cartModel');
+
+const customerModel = require('@modules/User/models/customerModel');
+const addressModel = require('@modules/User/models/addressModel');
+
+const invoiceItemModel = require('@modules/Order/models/invoiceItemModel');
+const invoiceModel = require('@modules/Order/models/invoiceModel');
+
+const voucherModel = require('@modules/Voucher/models/voucherModel');
+const accountVoucher = require('@modules/Voucher/models/userVoucher');
+
+const reviewModel = require('@modules/Review/models/reviewModel');
+
+const supportConversationModel = require('@modules/Chat/models/supportConversationModel');
+const supportMessageModel = require('@modules/Chat/models/supportMessageModel');
 const pendingPaymentModel = require('@models/pendingPaymentModel');
-
-sequelize
-    .sync()
-    .then(() => {
-        console.log('\n\nTables have been created\n\n');
-    })
-    .catch((error) => console.log('\n\nThis error occurred', error + '\n\n'));
 
 module.exports = {
     userModel,
