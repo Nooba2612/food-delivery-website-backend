@@ -1,4 +1,4 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
 
 const chatController = require("./chat.controller");
@@ -84,7 +84,7 @@ router.delete(
  *       401:
  *         description: Unauthorized
  */
-router.get("/", authMiddleware, chatController.getConversations);
+router.get('/', authMiddleware, chatController.getConversations);
 
 // Get conversations by userId
 /**
@@ -168,7 +168,6 @@ router.get(
  *                 description: UUID of participant
  *     responses:
  *       200:
- *         description: Conversation created or found
  *         content:
  *           application/json:
  *             schema:
@@ -194,7 +193,7 @@ router.get(
  *       401:
  *         description: Unauthorized
  */
-router.post("/", authMiddleware, chatController.getOrCreateDirectConversation);
+router.post('/', authMiddleware, chatController.getOrCreateDirectConversation);
 
 // Create group conversation
 /**
@@ -337,7 +336,7 @@ router.post(
  *       401:
  *         description: Unauthorized
  */
-router.post("/details", authMiddleware, chatController.getConversationDetails);
+router.post('/details', authMiddleware, chatController.getConversationDetails);
 
 // Update conversation (name/avatar)
 /**
