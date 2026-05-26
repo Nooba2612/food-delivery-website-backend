@@ -13,6 +13,17 @@ const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || "ollama";
 let openaiClient;
 let qdrantClient;
 
+function getDishPointId(dish) {
+  const plainDish = dish?.get ? dish.get({ plain: true }) : dish;
+  const dishId = plainDish?.dish_id;
+
+  if (typeof dishId !== "string" || dishId.trim() === "") {
+    throw new Error("Dish ID is required for semantic indexing.");
+  }
+
+  return dishId;
+}
+
 function isSemanticSearchEnabled() {
   return Boolean(
     EMBEDDING_BASE_URL && EMBEDDING_API_KEY && process.env.QDRANT_URL,
@@ -58,6 +69,28 @@ function buildDishEmbeddingText(dish) {
     `Giá: ${plainDish?.price || "Liên hệ"} VNĐ`,
     `Tags: ${tags || "Không có"}`,
   ].join(". ");
+}
+
+function buildDishPayload(dish) {
+  const plainDish = dish?.get ? dish.get({ plain: true }) : dish;
+  const categoryName =
+    plainDish?.category?.name ||
+    plainDish?.Category?.name ||
+    plainDish?.Category?.category_name ||
+    "N/A";
+
+  return {
+    dish_id: plainDish?.dish_id,
+    name: plainDish?.name || null,
+    brand: plainDish?.brand || null,
+    price: plainDish?.price != null ? Number(plainDish.price) : null,
+    category: categoryName,
+    description: plainDish?.description || null,
+    image_url: plainDish?.thumbnail_path || null,
+    rating: Number(plainDish?.rating_avg || 0),
+    status: plainDish?.status || null,
+    available: Boolean(plainDish?.available),
+  };
 }
 
 async function generateEmbeddingFromText(text) {
@@ -141,12 +174,86 @@ async function searchDishIdsBySemanticQuery(queryText, limit = 6) {
     );
 }
 
+async function upsertDishToSemanticIndex(dish) {
+  if (!isSemanticSearchEnabled()) {
+    return { skipped: true, reason: "semantic_search_disabled" };
+  }
+
+  const client = getQdrantClient();
+  const pointId = getDishPointId(dish);
+  const vector = await generateEmbeddingFromText(buildDishEmbeddingText(dish));
+
+  await client.upsert(COLLECTION_NAME, {
+    wait: true,
+    points: [
+      {
+        id: pointId,
+        vector,
+        payload: buildDishPayload(dish),
+      },
+    ],
+  });
+
+  return { skipped: false, pointId };
+}
+
+async function removeDishFromSemanticIndex(dishId) {
+  if (!isSemanticSearchEnabled()) {
+    return { skipped: true, reason: "semantic_search_disabled" };
+  }
+
+  if (typeof dishId !== "string" || dishId.trim() === "") {
+    throw new Error("Dish ID is required for semantic index deletion.");
+  }
+
+  const client = getQdrantClient();
+  await client.delete(COLLECTION_NAME, {
+    wait: true,
+    points: [dishId],
+  });
+
+  return { skipped: false, pointId: dishId };
+}
+
+async function getDishPointFromSemanticIndex(dishId) {
+  if (!isSemanticSearchEnabled()) {
+    return {
+      skipped: true,
+      reason: "semantic_search_disabled",
+      point: null,
+    };
+  }
+
+  if (typeof dishId !== "string" || dishId.trim() === "") {
+    throw new Error("Dish ID is required for semantic index lookup.");
+  }
+
+  const client = getQdrantClient();
+  const result = await client.retrieve(COLLECTION_NAME, {
+    ids: [dishId],
+    with_payload: true,
+    with_vector: false,
+  });
+
+  const point = Array.isArray(result) ? result[0] : result?.[0] || null;
+
+  return {
+    skipped: false,
+    point: point || null,
+  };
+}
+
 module.exports = {
   buildDishEmbeddingText,
+  buildDishPayload,
   COLLECTION_NAME,
   EMBEDDING_MODEL,
   generateEmbeddingFromText,
+  getDishPointId,
+  getDishPointFromSemanticIndex,
   getQdrantClient,
   isSemanticSearchEnabled,
+  removeDishFromSemanticIndex,
   searchDishIdsBySemanticQuery,
+  upsertDishToSemanticIndex,
 };

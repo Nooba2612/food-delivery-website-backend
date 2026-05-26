@@ -165,6 +165,18 @@ router.put("/password", authMiddleware, userController.changePassword);
  *         description: Unauthorized
  */
 router.get("/addresses", authMiddleware, userController.getAddresses);
+router.get("/favorites", authMiddleware, userController.getFavorites);
+router.get(
+  "/favorites/:dishId/status",
+  authMiddleware,
+  userController.getFavoriteStatus,
+);
+router.post("/favorites", authMiddleware, userController.addFavorite);
+router.delete(
+  "/favorites/:dishId",
+  authMiddleware,
+  userController.removeFavorite,
+);
 
 /**
  * @swagger

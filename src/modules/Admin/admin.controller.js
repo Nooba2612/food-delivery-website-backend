@@ -102,6 +102,11 @@ class AdminController {
     const cats = await AdminService.getCategories();
     res.json({ success: true, data: cats });
   });
+
+  getDishSyncDebug = catchAsync(async (req, res) => {
+    const data = await AdminService.getDishSyncDebug(req.params.id);
+    res.json({ success: true, data });
+  });
 }
 
 module.exports = new AdminController();

@@ -3,6 +3,10 @@ const { v4: uuidv4 } = require("uuid");
 const dishModel = require("./models/dishModel");
 const categoryModel = require("./models/categoryModel");
 const { uploadToS3 } = require("@core/config/multer");
+const {
+  removeDishFromSemanticIndex,
+  upsertDishToSemanticIndex,
+} = require("./semanticSearch.service");
 
 const slugify = (str) =>
   str
@@ -13,6 +17,40 @@ const slugify = (str) =>
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .trim();
+
+async function syncDishSemanticIndex(dishId) {
+  const dish = await dishModel.findOne({
+    where: { dish_id: dishId },
+    include: [
+      {
+        model: categoryModel,
+        as: "category",
+        attributes: ["category_id", "name"],
+      },
+    ],
+  });
+
+  if (!dish) {
+    return removeDishFromSemanticIndex(dishId);
+  }
+
+  if (dish.status === "active" && dish.available) {
+    return upsertDishToSemanticIndex(dish);
+  }
+
+  return removeDishFromSemanticIndex(dishId);
+}
+
+async function syncDishSemanticIndexSafely(dishId, action) {
+  try {
+    await syncDishSemanticIndex(dishId);
+  } catch (error) {
+    console.warn(
+      `[DishController] Semantic sync failed after ${action} for dish ${dishId}:`,
+      error?.data?.status?.error || error.message,
+    );
+  }
+}
 
 class dishController {
   async getDishes(req, res) {
@@ -187,6 +225,8 @@ class dishController {
         calories: calories || null,
       });
 
+      await syncDishSemanticIndexSafely(newDish.dish_id, "create");
+
       return res.status(201).json({
         success: true,
         message: "Tạo món ăn thành công",
@@ -224,7 +264,6 @@ class dishController {
         status,
         available,
         description,
-        thumbnail_path,
         brand,
         preparation_time,
         calories,
@@ -269,6 +308,8 @@ class dishController {
         ...(calories !== undefined && { calories }),
       });
 
+      await syncDishSemanticIndexSafely(dish.dish_id, "update");
+
       return res.status(200).json({
         success: true,
         message: "Cập nhật món ăn thành công",
@@ -297,7 +338,16 @@ class dishController {
         });
       }
 
+      const dishId = dish.dish_id;
       await dish.destroy();
+      try {
+        await removeDishFromSemanticIndex(dishId);
+      } catch (error) {
+        console.warn(
+          `[DishController] Semantic delete failed for dish ${dishId}:`,
+          error?.data?.status?.error || error.message,
+        );
+      }
 
       return res.status(200).json({
         success: true,
