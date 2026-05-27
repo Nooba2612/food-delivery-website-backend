@@ -1,6 +1,29 @@
-version: "3.8"
-
 services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: eatsy_backend
+    restart: always
+    env_file:
+      - .env
+    environment:
+      DB_NAME: eatsy_food
+      DB_HOST: mysql_db
+      DB_USER: root
+      DB_PASSWORD: rootpassword
+      DB_DIALECT: mysql
+      DB_PORT: 3306
+      REDIS_URL: redis://redis:6379/0
+      SEQUELIZE_LOGGING: "false"
+    depends_on:
+      mysql_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "5678:5678"
+
   mysql_db:
     image: mysql:8.0
     container_name: eatsy_mysql
@@ -9,9 +32,26 @@ services:
       MYSQL_DATABASE: eatsy_food
       MYSQL_ROOT_PASSWORD: rootpassword
     ports:
-      - "3306:3306"
+      - "9000:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./eatsy_database.sql:/docker-entrypoint-initdb.d/01-eatsy_database.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   mysql_data:
