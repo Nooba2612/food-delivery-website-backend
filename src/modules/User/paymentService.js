@@ -6,6 +6,7 @@ const {
     cartModel,
     cartItemModel,
     userModel,
+    voucherModel,
 } = require('@models');
 const { v4: uuidv4 } = require('uuid');
 const { sequelize } = require('@core/config/sequelize');
@@ -179,11 +180,6 @@ const PaymentService = {
                     );
                 }
 
-                await voucher.decrement('number_of_uses', {
-                    by: 1,
-                    transaction: t,
-                });
-
                 appliedVoucher = {
                     voucher_id: voucher.voucher_id,
                     code: voucher.code,
@@ -310,6 +306,41 @@ const PaymentService = {
                         400,
                     );
                 }
+            }
+
+            if (payment.voucher_code) {
+                const baseAmount =
+                    Number(payment.original_amount) ||
+                    Number(payment.total_amount) +
+                        Number(payment.discount_amount || 0);
+                const voucher = await voucherModel.findOne({
+                    where: {
+                        code: payment.voucher_code,
+                        valid_from: { [Op.lte]: new Date() },
+                        valid_to: { [Op.gte]: new Date() },
+                        number_of_uses: { [Op.gt]: 0 },
+                    },
+                    transaction: t,
+                });
+
+                if (!voucher) {
+                    throw new AppError(
+                        'Mã giảm giá không hợp lệ hoặc đã hết hạn',
+                        400,
+                    );
+                }
+
+                if (baseAmount < voucher.min_purchase) {
+                    throw new AppError(
+                        `Đơn hàng tối thiểu ${voucher.min_purchase.toLocaleString('vi-VN')}₫ để áp dụng mã này`,
+                        400,
+                    );
+                }
+
+                await voucher.decrement('number_of_uses', {
+                    by: 1,
+                    transaction: t,
+                });
             }
 
             const orderId = uuidv4();
