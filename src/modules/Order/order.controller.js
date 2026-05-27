@@ -1,6 +1,11 @@
 const orderService = require('./order.service');
 const catchAsync = require('@core/utils/catchAsync');
 const AppError = require('@core/utils/AppError');
+const {
+    reserveIdempotencyKey,
+    completeIdempotencyKey,
+    releaseIdempotencyKey,
+} = require('@core/utils/idempotencyStore');
 
 class orderController {
     /**
@@ -15,7 +20,8 @@ class orderController {
         }
 
         const userId = req.user.user_id;
-        const { address_id, note, voucher_code, payment_method } = req.body;
+        const { address_id, note, voucher_code, payment_method, request_id } =
+            req.body;
 
         if (!address_id) {
             return next(
@@ -32,24 +38,69 @@ class orderController {
             );
         }
 
-        const order = await orderService.createOrderFromCart(userId, {
-            address_id,
-            note,
-            voucher_code,
-            payment_method: payment_method || 'COD',
+        const idempotencyState = await reserveIdempotencyKey({
+            scope: 'checkout-order',
+            userId,
+            requestId: request_id,
+            payload: {
+                address_id,
+                note,
+                voucher_code,
+                payment_method: payment_method || 'COD',
+            },
         });
 
-        res.status(201).json({
-            success: true,
-            data: order,
-        });
+        if (idempotencyState.status === 'conflict') {
+            return next(
+                new AppError(
+                    'Yêu cầu checkout không hợp lệ do request_id bị tái sử dụng cho dữ liệu khác',
+                    409,
+                ),
+            );
+        }
+
+        if (idempotencyState.status === 'in_progress') {
+            return next(
+                new AppError(
+                    'Đơn hàng đang được xử lý. Vui lòng chờ trong giây lát',
+                    409,
+                ),
+            );
+        }
+
+        if (idempotencyState.status === 'replay') {
+            return res.status(200).json({
+                success: true,
+                data: idempotencyState.response,
+                idempotent_replay: true,
+            });
+        }
+
+        try {
+            const order = await orderService.createOrderFromCart(userId, {
+                address_id,
+                note,
+                voucher_code,
+                payment_method: payment_method || 'COD',
+            });
+
+            await completeIdempotencyKey(idempotencyState.storeKey, order);
+
+            res.status(201).json({
+                success: true,
+                data: order,
+            });
+        } catch (error) {
+            await releaseIdempotencyKey(idempotencyState.storeKey);
+            throw error;
+        }
     });
 
     /**
      * GET /api/orders/my
      * Get all orders of current user
      */
-    getMyOrders = catchAsync(async (req, res, next) => {
+    getMyOrders = catchAsync(async (req, res) => {
         const userId = req.user.user_id;
         const orders = await orderService.getUserOrders(userId);
 
@@ -63,7 +114,7 @@ class orderController {
      * GET /api/orders/:id
      * Get specific order detail
      */
-    getOrderDetail = catchAsync(async (req, res, next) => {
+    getOrderDetail = catchAsync(async (req, res) => {
         const userId = req.user.user_id;
         const orderId = req.params.id;
 
@@ -79,7 +130,7 @@ class orderController {
      * POST /api/orders/:id/reorder
      * Reorder items from a past order
      */
-    reorder = catchAsync(async (req, res, next) => {
+    reorder = catchAsync(async (req, res) => {
         const userId = req.user.user_id;
         const orderId = req.params.id;
 
