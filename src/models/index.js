@@ -115,10 +115,18 @@ supportConversationModel.belongsTo(userModel, {
     foreignKey: 'customer_id',
     as: 'customer',
 });
-
-// Pending payment associations
+    
 userModel.hasMany(pendingPaymentModel, {
     foreignKey: 'user_id',
+    sourceKey: 'userId',
     as: 'pendingPayments',
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
 });
-pendingPaymentModel.belongsTo(userModel, { foreignKey: 'user_id', as: 'user' });
+pendingPaymentModel.belongsTo(userModel, {
+    foreignKey: 'user_id',
+    targetKey: 'userId',
+    as: 'user',
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+});

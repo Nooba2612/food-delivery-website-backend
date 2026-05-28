@@ -3,10 +3,13 @@ const jwt = require("jsonwebtoken");
 const authMiddleware = (req, res, next) => {
     const jwtSecretKey = process.env.JWT_SECRET_KEY;
 
-    // ✅ Read token from Authorization header ONLY
-    const token = req.headers.authorization?.startsWith("Bearer ") 
+    let token = req.headers.authorization?.startsWith("Bearer ") 
         ? req.headers.authorization.split(" ")[1] 
         : null;
+    
+    if (!token && req.cookies) {
+        token = req.cookies.token;
+    }
 
     // ✅ DEBUG LOGS
     console.log("--- AUTH DEBUG ---");
@@ -14,6 +17,7 @@ const authMiddleware = (req, res, next) => {
     console.log("PATH:", req.path);
     console.log("HEADERS:", req.headers);
     console.log("AUTH HEADER:", req.headers.authorization);
+    console.log("TOKEN FROM COOKIES:", req.cookies?.token ? "Found" : "Not found");
 
     if (!token) {
         return res.status(401).json({ success: false, message: "Unauthorized: No token provided" });
@@ -28,7 +32,7 @@ const authMiddleware = (req, res, next) => {
         console.log("DECODED USER:", decoded);
 
         req.user = {
-            id: decoded.user_id, // Added for consistency
+            id: decoded.user_id, 
             user_id: decoded.user_id,
             username: decoded.username,
             role: decoded.role
@@ -41,14 +45,17 @@ const authMiddleware = (req, res, next) => {
 const authAdminMiddleware = (req, res, next) => {
     const jwtSecretKey = process.env.JWT_SECRET_KEY;
     
-    // ✅ Read token from Authorization header ONLY
-    const token = req.headers.authorization?.startsWith("Bearer ") 
+    let token = req.headers.authorization?.startsWith("Bearer ") 
         ? req.headers.authorization.split(" ")[1] 
         : null;
+    
+    if (!token && req.cookies) {
+        token = req.cookies.token;
+    }
 
-    // ✅ DEBUG LOGS
     console.log("--- AUTH ADMIN DEBUG ---");
     console.log("AUTH HEADER:", req.headers.authorization);
+    console.log("TOKEN FROM COOKIES:", req.cookies?.token ? "Found" : "Not found");
 
     if (!token) {
         return res.status(401).json({ success: false, message: "Unauthorized failed: No token provided" });
@@ -60,7 +67,7 @@ const authAdminMiddleware = (req, res, next) => {
             return res.status(401).json({ success: false, message: "Invalid or expired token" });
         }
 
-        // // ✅ DEBUG LOGS
+       
         // console.log("DECODED USER:", decoded);
 
         // const { role } = decoded;
