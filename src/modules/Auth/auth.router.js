@@ -1,9 +1,22 @@
 const express = require("express");
 const router = express.Router();
 const passport = require("passport");
+const rateLimit = require("express-rate-limit");
 
 const authController = require("./auth.controller");
 const { authMiddleware } = require("@core/middlewares/authMiddleware");
+
+// Limit OTP requests to 5 times per hour per IP
+const otpLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // Limit each IP to 5 requests per hour
+  message: {
+    success: false,
+    message: "Bạn đã vượt quá số lần yêu cầu mã OTP (5 lần/giờ). Vui lòng đăng nhập bằng mật khẩu hoặc thử lại sau."
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
 
 /**
  * @swagger
@@ -186,7 +199,7 @@ router.get("/login-status", authController.loginStatus);
  *       400:
  *         description: Invalid email
  */
-router.post("/send-otp", authController.sendOTP);
+router.post("/send-otp", otpLimiter, authController.sendOTP);
 
 /**
  * @swagger

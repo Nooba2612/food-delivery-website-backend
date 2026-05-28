@@ -47,18 +47,16 @@ class authController {
                     .json({ success: false, message: 'Failed to send OTP' });
             }
 
-            phone = getPhoneDigits(phone); // Always store 9 digits in DB
+            phone = getPhoneDigits(phone); 
 
             if (resendOTP) {
                 await deleteOTP(countryCode, phone);
             }
 
             const otp = generateOTP();
-            const formattedPhone = formatPhoneNumber(phone); // +84XXXXXXXXX
-            console.log(`[OTP] Generated for ${formattedPhone}: ${otp}`);
+            const formattedPhone = formatPhoneNumber(phone); 
 
             await saveOTP(countryCode, phone, otp);
-            console.log(`[OTP] Saved to database for ${phone}`);
 
             const isProd = process.env.NODE_ENV === 'production';
 
@@ -88,7 +86,6 @@ class authController {
             res.status(200).json({
                 success: true,
                 message: 'OTP sent successfully',
-                // In dev mode, return OTP to frontend for convenience if needed
                 otp: !isProd ? otp : undefined,
             });
         } catch (error) {
@@ -610,11 +607,9 @@ class authController {
             const jwt = require('jsonwebtoken');
             const decoded = jwt.verify(refreshToken, jwtRefreshSecret);
 
-            // decoded will contain user_id, username, role
-            // generate new access token (only access token using access secret)
             const accessSecret =
                 process.env.JWT_SECRET || process.env.JWT_SECRET_KEY;
-            const accessExpires = process.env.JWT_EXPIRES_IN || '15m';
+            const accessExpires = process.env.JWT_EXPIRES_IN ;
 
             const newAccessToken = jwt.sign(
                 {
