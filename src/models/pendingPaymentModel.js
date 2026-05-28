@@ -98,4 +98,13 @@ const pendingPaymentModel = sequelize.define(
     },
 );
 
+pendingPaymentModel.associate = (models) => {
+    pendingPaymentModel.belongsTo(models.User, {
+        foreignKey: 'user_id',
+        targetKey: 'userId',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+    });
+};
+
 module.exports = pendingPaymentModel;
