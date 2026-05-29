@@ -3,13 +3,11 @@ const { Op } = require("sequelize");
 
 const { addressModel, userModel } = require("@models");
 
-// ── Safe attribute whitelist — ONLY columns that exist in the DB ──
 const USER_SAFE_ATTRIBUTES = [
     "userId",
     "fullname",
     "gender",
     "dateOfBirth",
-    "password",
     "username",
     "typeLogin",
     "email",
@@ -62,9 +60,7 @@ const getUserByEmail = async (email) => {
 const getProfile = async (userId) => {
     try {
         const user = await userModel.findByPk(userId, {
-            attributes: {
-                exclude: ["password"],
-            },
+            attributes: USER_SAFE_ATTRIBUTES,
             include: [
                 {
                     model: addressModel,

@@ -39,9 +39,6 @@ class UserController {
         try {
             const userId = req.user?.user_id;
             
-            // ✅ DEBUG LOGS
-            console.log("PROFILE userId:", userId);
-
             if (!userId) {
                 return res.status(401).json({
                     success: false,

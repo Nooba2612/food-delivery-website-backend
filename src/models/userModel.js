@@ -69,5 +69,4 @@ const User = sequelize.define(
   },
 );
 
-// Remove circular dependency - associations handled in index.js
 module.exports = User;
