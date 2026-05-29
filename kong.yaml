@@ -1,0 +1,89 @@
+_format_version: "3.0"
+services:
+  # 1. Service xu ly REST API
+  - name: eatsy-backend-api
+    url: http://host.docker.internal:5678
+    retries: 2
+    connect_timeout: 3000
+    write_timeout: 5000
+    read_timeout: 5000
+    routes:
+      - name: api-routes
+        paths:
+          - /api
+        strip_path: false
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - http://localhost:3000
+            - http://localhost:1234
+            - http://localhost:1235
+          methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+          headers: ["Accept", "Accept-Version", "Content-Length", "Content-MD5", "Content-Type", "Date", "Authorization"]
+          exposed_headers: ["X-Auth-Token"]
+          credentials: true
+          max_age: 3600
+
+  # 2. Service xu ly WebSockets (Chat/Call)
+  - name: eatsy-backend-ws
+    url: http://host.docker.internal:5678
+    retries: 2
+    connect_timeout: 3000
+    write_timeout: 5000
+    read_timeout: 5000
+    routes:
+      - name: websocket-routes
+        paths:
+          - /socket.io
+        strip_path: false
+        protocols:
+          - http
+          - https
+
+  # 3. Service bao ve luong thanh toan VNPay va Checkout
+  - name: eatsy-payment-secure
+    url: http://host.docker.internal:5678
+    retries: 2
+    connect_timeout: 3000
+    write_timeout: 5000
+    read_timeout: 5000
+    routes:
+      - name: payment-routes
+        paths:
+          - /api/orders
+          - /api/payments
+          - /api/vnpay
+        strip_path: false
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 10
+          policy: local
+          fault_tolerant: true
+          hide_client_headers: false
+
+  # 4. Service xu ly tai nguyen tinh va trang thai backend
+  - name: eatsy-backend-static
+    url: http://host.docker.internal:5678
+    retries: 2
+    connect_timeout: 3000
+    write_timeout: 5000
+    read_timeout: 5000
+    routes:
+      - name: static-routes
+        paths:
+          - /images
+          - /stylesheets
+          - /status
+          - /api-docs
+        strip_path: false
+        protocols:
+          - http
+          - https

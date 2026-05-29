@@ -11,6 +11,8 @@
     "watch": "webpack --watch",
     "serve": "webpack serve",
     "lint": "eslint .",
+    "verify:kong": "powershell -ExecutionPolicy Bypass -File ./scripts/verify-kong.ps1",
+    "verify:kong:lite": "powershell -ExecutionPolicy Bypass -File ./scripts/verify-kong-lite.ps1",
     "seed:mysql": "docker exec -i eatsy_mysql mysql -uroot -prootpassword < eatsy_database.sql",
     "create:admin": "babel-node create_admin.js",
     "ingest:dishes": "node scripts/ingestDishes.js",

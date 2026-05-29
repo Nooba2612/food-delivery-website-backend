@@ -1,5 +1,6 @@
 const OpenAI = require("openai");
 const { QdrantClient } = require("@qdrant/js-client-rest");
+const { retryAsync } = require("@core/utils/retry");
 
 const COLLECTION_NAME = process.env.QDRANT_COLLECTION_NAME || "eatsy_dishes";
 const EMBEDDING_MODEL =
@@ -98,10 +99,24 @@ async function generateEmbeddingFromText(text) {
     throw new Error("Semantic search is not configured.");
   }
 
-  const response = await getOpenAIClient().embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: text,
-  });
+  const response = await retryAsync(
+    () =>
+      getOpenAIClient().embeddings.create({
+        model: EMBEDDING_MODEL,
+        input: text,
+      }),
+    {
+      retries: 2,
+      baseDelayMs: 1000,
+      timeoutMs: 5000,
+      operationName: "generate dish embedding",
+      onRetry: ({ attempt, delayMs, error }) => {
+        console.warn(
+          `[Retry] Embedding request failed on attempt ${attempt}. Retrying in ${delayMs}ms: ${error.message}`,
+        );
+      },
+    },
+  );
 
   const values = response?.data?.[0]?.embedding;
   if (!Array.isArray(values) || values.length === 0) {
@@ -135,21 +150,39 @@ async function queryPoints(vector, limit) {
   const client = getQdrantClient();
 
   if (typeof client.query === "function") {
-    return client.query(COLLECTION_NAME, {
-      query: vector,
-      limit,
-      with_payload: true,
-      with_vector: false,
-    });
+    return retryAsync(
+      () =>
+        client.query(COLLECTION_NAME, {
+          query: vector,
+          limit,
+          with_payload: true,
+          with_vector: false,
+        }),
+      {
+        retries: 2,
+        baseDelayMs: 1000,
+        timeoutMs: 5000,
+        operationName: "query Qdrant points",
+      },
+    );
   }
 
   if (typeof client.search === "function") {
-    return client.search(COLLECTION_NAME, {
-      vector,
-      limit,
-      with_payload: true,
-      with_vector: false,
-    });
+    return retryAsync(
+      () =>
+        client.search(COLLECTION_NAME, {
+          vector,
+          limit,
+          with_payload: true,
+          with_vector: false,
+        }),
+      {
+        retries: 2,
+        baseDelayMs: 1000,
+        timeoutMs: 5000,
+        operationName: "search Qdrant points",
+      },
+    );
   }
 
   throw new Error("Qdrant client does not support query/search.");
@@ -183,16 +216,25 @@ async function upsertDishToSemanticIndex(dish) {
   const pointId = getDishPointId(dish);
   const vector = await generateEmbeddingFromText(buildDishEmbeddingText(dish));
 
-  await client.upsert(COLLECTION_NAME, {
-    wait: true,
-    points: [
-      {
-        id: pointId,
-        vector,
-        payload: buildDishPayload(dish),
-      },
-    ],
-  });
+  await retryAsync(
+    () =>
+      client.upsert(COLLECTION_NAME, {
+        wait: true,
+        points: [
+          {
+            id: pointId,
+            vector,
+            payload: buildDishPayload(dish),
+          },
+        ],
+      }),
+    {
+      retries: 2,
+      baseDelayMs: 1000,
+      timeoutMs: 5000,
+      operationName: "upsert dish to Qdrant",
+    },
+  );
 
   return { skipped: false, pointId };
 }
@@ -207,10 +249,19 @@ async function removeDishFromSemanticIndex(dishId) {
   }
 
   const client = getQdrantClient();
-  await client.delete(COLLECTION_NAME, {
-    wait: true,
-    points: [dishId],
-  });
+  await retryAsync(
+    () =>
+      client.delete(COLLECTION_NAME, {
+        wait: true,
+        points: [dishId],
+      }),
+    {
+      retries: 2,
+      baseDelayMs: 1000,
+      timeoutMs: 5000,
+      operationName: "delete dish from Qdrant",
+    },
+  );
 
   return { skipped: false, pointId: dishId };
 }
@@ -229,11 +280,20 @@ async function getDishPointFromSemanticIndex(dishId) {
   }
 
   const client = getQdrantClient();
-  const result = await client.retrieve(COLLECTION_NAME, {
-    ids: [dishId],
-    with_payload: true,
-    with_vector: false,
-  });
+  const result = await retryAsync(
+    () =>
+      client.retrieve(COLLECTION_NAME, {
+        ids: [dishId],
+        with_payload: true,
+        with_vector: false,
+      }),
+    {
+      retries: 2,
+      baseDelayMs: 1000,
+      timeoutMs: 5000,
+      operationName: "retrieve dish from Qdrant",
+    },
+  );
 
   const point = Array.isArray(result) ? result[0] : result?.[0] || null;
 
