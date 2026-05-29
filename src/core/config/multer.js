@@ -1,6 +1,7 @@
 const multer = require("multer");
 const path = require("path");
 const AWS = require("aws-sdk");
+const { retryAsync } = require("@core/utils/retry");
 
 const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
 const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
@@ -123,7 +124,20 @@ const uploadToS3 = async (file, folder) => {
     };
 
     try {
-        const result = await s3.upload(params).promise();
+        const result = await retryAsync(
+            () => s3.upload(params).promise(),
+            {
+                retries: 2,
+                baseDelayMs: 1000,
+                timeoutMs: 5000,
+                operationName: "upload file to S3",
+                onRetry: ({ attempt, delayMs, error }) => {
+                    console.warn(
+                        `[Retry] S3 upload failed on attempt ${attempt}. Retrying in ${delayMs}ms: ${error.message}`,
+                    );
+                },
+            },
+        );
         return result.Location;
     } catch (error) {
         console.error("S3 upload error:", error.message);

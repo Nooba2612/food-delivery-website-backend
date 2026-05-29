@@ -71,7 +71,7 @@ class authController {
             } else {
                 const user = await getUserByPhoneNumber(countryCode, phone);
                 if (user && user.email) {
-                    sendEmail(
+                    await sendEmail(
                         user.email,
                         'Eatsy Verification Code',
                         `Your Eatsy verification code is: ${otp}`,
@@ -441,7 +441,7 @@ class authController {
                         rawPhone,
                     );
                     if (user && user.email) {
-                        sendEmail(
+                        await sendEmail(
                             user.email,
                             'Eatsy Password Reset',
                             `Your password reset OTP is: ${otp}`,
@@ -471,7 +471,7 @@ class authController {
 
         if (info && regexEmail.test(info)) {
             try {
-                sendEmail(
+                await sendEmail(
                     info,
                     'Xác nhận thiết lập lại mật khẩu Eatsy',
                     'Vui lòng không cung cấp mã OTP cho bất kỳ ai. Mã OTP của bạn là: ' +

@@ -1,5 +1,6 @@
 const OpenAI = require("openai");
 const { Op } = require("sequelize");
+const { retryAsync } = require("@core/utils/retry");
 
 const dishService = require("@modules/Dish/dish.service");
 const categoryService = require("@modules/Dish/category.service");
@@ -459,16 +460,45 @@ const chat = async (req, res) => {
     );
     const history = formatHistoryForOpenAI(chatHistory);
 
-    const completion = await openai.chat.completions.create({
-      model: CHAT_MODEL,
-      temperature: 0.7,
-      max_tokens: 800,
-      messages: [
-        { role: "system", content: systemInstruction },
-        ...history,
-        { role: "user", content: userMessage },
-      ],
-    });
+    const completion = await retryAsync(
+      () =>
+        openai.chat.completions.create({
+          model: CHAT_MODEL,
+          temperature: 0.7,
+          max_tokens: 800,
+          messages: [
+            { role: "system", content: systemInstruction },
+            ...history,
+            { role: "user", content: userMessage },
+          ],
+        }),
+      {
+        retries: 2,
+        baseDelayMs: 1000,
+        timeoutMs: 5000,
+        operationName: "generate chatbot completion",
+        shouldRetry: (error) => {
+          const status = error?.status || error?.response?.status;
+          if (typeof status === "number" && status >= 500) {
+            return true;
+          }
+
+          return (
+            error?.code === "ECONNREFUSED" ||
+            error?.code === "ECONNRESET" ||
+            error?.code === "ETIMEDOUT" ||
+            error?.cause?.code === "ECONNREFUSED" ||
+            error?.cause?.code === "ECONNRESET" ||
+            error?.cause?.code === "ETIMEDOUT"
+          );
+        },
+        onRetry: ({ attempt, delayMs, error }) => {
+          console.warn(
+            `[Retry] Chatbot completion failed on attempt ${attempt}. Retrying in ${delayMs}ms: ${error.message}`,
+          );
+        },
+      },
+    );
 
     const aiReply = completion.choices?.[0]?.message?.content?.trim();
     const fallbackCards = buildFallbackDishCards(relevantDishes);
