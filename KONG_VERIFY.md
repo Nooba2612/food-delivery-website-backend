@@ -63,3 +63,6 @@ You can present the retry mechanism like this:
 - Kong is the first fault-tolerance layer. If the upstream backend connection is slow or temporarily unavailable, Kong retries the request up to 2 times with a 3-5 second timeout budget.
 - The backend is the second fault-tolerance layer. When it calls external services such as SMTP, S3, OpenAI, or Qdrant, it retries transient failures up to 2 times with exponential backoff `1s -> 2s`.
 - The backend only retries transient faults such as timeout, connection reset, refused connection, or upstream `5xx`. It does not retry normal business errors like validation failures or `4xx`.
+
+docker compose up -d --build
+docker logs -f eatsy_backend

@@ -23,6 +23,11 @@ const openai = new OpenAI({
 const CHAT_MODEL =
   process.env.FREELLMAPI_MODEL || "google/gemini-2.5-flash-lite";
 const BACKEND_URL = process.env.BASE_URL || "http://localhost:5678";
+const CHAT_COMPLETION_TIMEOUT_MS = Number(
+  process.env.FREELLMAPI_TIMEOUT_MS || 60000,
+);
+const CHAT_MAX_TOKENS = Number(process.env.FREELLMAPI_MAX_TOKENS || 1000);
+const CHAT_RETRIES = Number(process.env.FREELLMAPI_RETRIES || 2);
 const TOP_K_RESULTS = 6;
 const CANDIDATE_POOL_SIZE = 12;
 const SLIDING_WINDOW_SIZE = 5;
@@ -465,7 +470,7 @@ const chat = async (req, res) => {
         openai.chat.completions.create({
           model: CHAT_MODEL,
           temperature: 0.7,
-          max_tokens: 800,
+          max_tokens: CHAT_MAX_TOKENS,
           messages: [
             { role: "system", content: systemInstruction },
             ...history,
@@ -473,9 +478,9 @@ const chat = async (req, res) => {
           ],
         }),
       {
-        retries: 2,
+        retries: CHAT_RETRIES,
         baseDelayMs: 1000,
-        timeoutMs: 5000,
+        timeoutMs: CHAT_COMPLETION_TIMEOUT_MS,
         operationName: "generate chatbot completion",
         shouldRetry: (error) => {
           const status = error?.status || error?.response?.status;

@@ -10,6 +10,10 @@ const EMBEDDING_MODEL =
 const EMBEDDING_BASE_URL =
   process.env.EMBEDDING_BASE_URL || "http://127.0.0.1:11434/v1";
 const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || "ollama";
+const EMBEDDING_TIMEOUT_MS = Number(process.env.EMBEDDING_TIMEOUT_MS || 20000);
+const QDRANT_OPERATION_TIMEOUT_MS = Number(
+  process.env.QDRANT_OPERATION_TIMEOUT_MS || 10000,
+);
 
 let openaiClient;
 let qdrantClient;
@@ -108,7 +112,7 @@ async function generateEmbeddingFromText(text) {
     {
       retries: 2,
       baseDelayMs: 1000,
-      timeoutMs: 5000,
+      timeoutMs: EMBEDDING_TIMEOUT_MS,
       operationName: "generate dish embedding",
       onRetry: ({ attempt, delayMs, error }) => {
         console.warn(
@@ -161,7 +165,7 @@ async function queryPoints(vector, limit) {
       {
         retries: 2,
         baseDelayMs: 1000,
-        timeoutMs: 5000,
+        timeoutMs: QDRANT_OPERATION_TIMEOUT_MS,
         operationName: "query Qdrant points",
       },
     );
@@ -179,7 +183,7 @@ async function queryPoints(vector, limit) {
       {
         retries: 2,
         baseDelayMs: 1000,
-        timeoutMs: 5000,
+        timeoutMs: QDRANT_OPERATION_TIMEOUT_MS,
         operationName: "search Qdrant points",
       },
     );
@@ -231,7 +235,7 @@ async function upsertDishToSemanticIndex(dish) {
     {
       retries: 2,
       baseDelayMs: 1000,
-      timeoutMs: 5000,
+      timeoutMs: QDRANT_OPERATION_TIMEOUT_MS,
       operationName: "upsert dish to Qdrant",
     },
   );
@@ -258,7 +262,7 @@ async function removeDishFromSemanticIndex(dishId) {
     {
       retries: 2,
       baseDelayMs: 1000,
-      timeoutMs: 5000,
+      timeoutMs: QDRANT_OPERATION_TIMEOUT_MS,
       operationName: "delete dish from Qdrant",
     },
   );
@@ -290,7 +294,7 @@ async function getDishPointFromSemanticIndex(dishId) {
     {
       retries: 2,
       baseDelayMs: 1000,
-      timeoutMs: 5000,
+      timeoutMs: QDRANT_OPERATION_TIMEOUT_MS,
       operationName: "retrieve dish from Qdrant",
     },
   );
