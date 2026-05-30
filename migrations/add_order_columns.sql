@@ -10,4 +10,4 @@ ADD COLUMN delivery_address TEXT AFTER payment_method,
 ADD COLUMN total_amount DECIMAL(10, 2) NOT NULL DEFAULT 0 AFTER delivery_address,
 ADD COLUMN payment_status ENUM('unpaid', 'paid') NOT NULL DEFAULT 'unpaid' AFTER total_amount,
 ADD COLUMN voucher_code VARCHAR(50) DEFAULT NULL COMMENT 'Applied voucher code' AFTER payment_status,
-ADD COLUMN discount_amount DECIMAL(10, 2) NOT NULL DEFAULT 0 COMMENT 'Discount from voucher' AFTER voucher_code;
+ADD COLUMN discount_amount DECIMAL(10, 2) Ndocker compose down -vOT NULL DEFAULT 0 COMMENT 'Discount from voucher' AFTER voucher_code;
