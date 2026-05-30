@@ -1,4 +1,5 @@
 const nodemailer = require("nodemailer");
+const { retryAsync } = require("@core/utils/retry");
 
 const fromEmailAddress = process.env.FROM_EMAIL;
 const fromEmailPassword = process.env.FROM_EMAIL_PASSWORD;
@@ -12,8 +13,7 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-const sendEmail = (recipientEmail, subject, content) => {
-    // Setup email data
+const sendEmail = async (recipientEmail, subject, content) => {
     const mailOptions = {
         from: fromEmailAddress,
         to: recipientEmail,
@@ -22,14 +22,23 @@ const sendEmail = (recipientEmail, subject, content) => {
         html: `<b>${content}</b>`,
     };
 
-    // Send email
-    transporter.sendMail(mailOptions, (error, info) => {
-        if (error) {
-            console.log("Error sending email:", error);
-        } else {
-            console.log("Email sent: " + info.response);
-        }
-    });
+    const info = await retryAsync(
+        () => transporter.sendMail(mailOptions),
+        {
+            retries: 2,
+            baseDelayMs: 1000,
+            timeoutMs: 5000,
+            operationName: "send email",
+            onRetry: ({ attempt, delayMs, error }) => {
+                console.warn(
+                    `[Retry] send email failed on attempt ${attempt}. Retrying in ${delayMs}ms: ${error.message}`,
+                );
+            },
+        },
+    );
+
+    console.log("Email sent: " + info.response);
+    return info;
 };
 
 module.exports = {

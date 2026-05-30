@@ -15,9 +15,15 @@ const {
   setupPassportSerialization,
 } = require("@modules/Auth/passport.config");
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:1234",
+  "http://localhost:1235",
+];
+const publicDir = path.join(process.cwd(), "src", "public");
 
 const useMiddlewares = (app) => {
-  app.use(express.static(path.join(__dirname, "public")));
+  app.use(express.static(publicDir));
   app.use(morgan("dev"));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
@@ -40,7 +46,13 @@ const useMiddlewares = (app) => {
   );
   app.use(
     cors({
-      origin: true,
+      origin(origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error("Not allowed by CORS"));
+      },
       credentials: true,
       allowedHeaders: [
         "Content-Type",
