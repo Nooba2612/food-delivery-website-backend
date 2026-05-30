@@ -10,9 +10,165 @@ const EMBEDDING_MODEL =
 const EMBEDDING_BASE_URL =
   process.env.EMBEDDING_BASE_URL || "http://127.0.0.1:11434/v1";
 const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || "ollama";
+const EMBEDDING_TIMEOUT_MS = Number(process.env.EMBEDDING_TIMEOUT_MS || 20000);
+const QDRANT_OPERATION_TIMEOUT_MS = Number(
+  process.env.QDRANT_OPERATION_TIMEOUT_MS || 10000,
+);
 
 let openaiClient;
 let qdrantClient;
+
+function normalizeMetadataText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function countBeefPattyHints(text) {
+  const normalizedText = normalizeMetadataText(text);
+
+  if (normalizedText.includes("triple")) {
+    return 3;
+  }
+
+  if (normalizedText.includes("double")) {
+    return 2;
+  }
+
+  const explicitCountMatch =
+    normalizedText.match(/\b(\d+)\s+(mieng\s+bo|patty)\b/) ||
+    normalizedText.match(/\b(\d+)\s+x\s+bo\b/);
+  const explicitCount = Number(explicitCountMatch?.[1] || 0);
+  if (Number.isInteger(explicitCount) && explicitCount > 0) {
+    return explicitCount;
+  }
+
+  if (
+    normalizedText.includes("double whopper") ||
+    normalizedText.includes("double cheeseburger") ||
+    normalizedText.includes("double bbq bacon cheese")
+  ) {
+    return 2;
+  }
+
+  if (
+    normalizedText.includes("whopper") ||
+    normalizedText.includes("cheeseburger") ||
+    normalizedText.includes("burger bo")
+  ) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function deriveDishMetadata(dish) {
+  const plainDish = dish?.get ? dish.get({ plain: true }) : dish;
+  const categoryName =
+    plainDish?.category?.name ||
+    plainDish?.Category?.name ||
+    plainDish?.Category?.category_name ||
+    "";
+  const searchableText = normalizeMetadataText(
+    [
+      plainDish?.name,
+      plainDish?.description,
+      plainDish?.brand,
+      categoryName,
+      Array.isArray(plainDish?.tags) ? plainDish.tags.join(" ") : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  const isCombo =
+    searchableText.includes("combo") ||
+    normalizeMetadataText(categoryName) === "combos";
+  const hasBeef =
+    searchableText.includes("thit bo") ||
+    searchableText.includes("bo nuong") ||
+    searchableText.includes("beef") ||
+    searchableText.includes("whopper") ||
+    searchableText.includes("cheeseburger");
+  const hasChicken =
+    searchableText.includes("ga") ||
+    searchableText.includes("chicken") ||
+    searchableText.includes("chic") ||
+    searchableText.includes("crispy chicken");
+  const hasSeafood =
+    searchableText.includes("hai san") ||
+    searchableText.includes("tom") ||
+    searchableText.includes("muc") ||
+    searchableText.includes("ca hoi") ||
+    searchableText.includes("seafood");
+  const hasCheese =
+    searchableText.includes("pho mai") ||
+    searchableText.includes("cheese") ||
+    searchableText.includes("parmesan");
+  const hasRice =
+    searchableText.includes("com") ||
+    normalizeMetadataText(categoryName).includes("com");
+  const hasNoodles =
+    searchableText.includes("mi ") ||
+    searchableText.includes("spaghetti") ||
+    searchableText.includes("carbonara") ||
+    searchableText.includes("bolognese");
+  const hasDrink =
+    searchableText.includes("coca") ||
+    searchableText.includes("milo") ||
+    searchableText.includes("nuoc");
+
+  let servingForm = "dish";
+  if (normalizeMetadataText(categoryName).includes("burger")) {
+    servingForm = "burger";
+  } else if (normalizeMetadataText(categoryName).includes("pizza")) {
+    servingForm = "pizza";
+  } else if (normalizeMetadataText(categoryName).includes("nuoc")) {
+    servingForm = "drink";
+  } else if (hasRice) {
+    servingForm = "rice";
+  } else if (hasNoodles) {
+    servingForm = "noodles";
+  }
+
+  const price = Number(plainDish?.price || 0);
+  const priceBand =
+    price <= 50000
+      ? "budget"
+      : price <= 100000
+        ? "standard"
+        : price <= 200000
+          ? "premium"
+          : "luxury";
+
+  const beefPattyCount = hasBeef ? countBeefPattyHints(searchableText) : 0;
+
+  let primaryProtein = "other";
+  if (hasBeef) {
+    primaryProtein = "beef";
+  } else if (hasChicken) {
+    primaryProtein = "chicken";
+  } else if (hasSeafood) {
+    primaryProtein = "seafood";
+  }
+
+  return {
+    serving_form: servingForm,
+    primary_protein: primaryProtein,
+    has_beef: hasBeef,
+    has_chicken: hasChicken,
+    has_seafood: hasSeafood,
+    has_cheese: hasCheese,
+    has_rice: hasRice,
+    has_noodles: hasNoodles,
+    has_drink: hasDrink,
+    is_combo: isCombo,
+    beef_patty_count: beefPattyCount,
+    price_band: priceBand,
+  };
+}
 
 function getDishPointId(dish) {
   const plainDish = dish?.get ? dish.get({ plain: true }) : dish;
@@ -61,6 +217,7 @@ function buildDishEmbeddingText(dish) {
     plainDish?.Category?.category_name ||
     "Món ăn";
   const tags = Array.isArray(plainDish?.tags) ? plainDish.tags.join(", ") : "";
+  const metadata = deriveDishMetadata(plainDish);
 
   return [
     `Tên món: ${plainDish?.name || "N/A"}`,
@@ -69,6 +226,7 @@ function buildDishEmbeddingText(dish) {
     `Mô tả: ${plainDish?.description || "Không có mô tả"}`,
     `Giá: ${plainDish?.price || "Liên hệ"} VNĐ`,
     `Tags: ${tags || "Không có"}`,
+    `Metadata: protein=${metadata.primary_protein}, form=${metadata.serving_form}, combo=${metadata.is_combo}, cheese=${metadata.has_cheese}, beef_patty_count=${metadata.beef_patty_count}, price_band=${metadata.price_band}`,
   ].join(". ");
 }
 
@@ -79,6 +237,7 @@ function buildDishPayload(dish) {
     plainDish?.Category?.name ||
     plainDish?.Category?.category_name ||
     "N/A";
+  const metadata = deriveDishMetadata(plainDish);
 
   return {
     dish_id: plainDish?.dish_id,
@@ -91,6 +250,8 @@ function buildDishPayload(dish) {
     rating: Number(plainDish?.rating_avg || 0),
     status: plainDish?.status || null,
     available: Boolean(plainDish?.available),
+    ...metadata,
+    metadata,
   };
 }
 
@@ -108,7 +269,7 @@ async function generateEmbeddingFromText(text) {
     {
       retries: 2,
       baseDelayMs: 1000,
-      timeoutMs: 5000,
+      timeoutMs: EMBEDDING_TIMEOUT_MS,
       operationName: "generate dish embedding",
       onRetry: ({ attempt, delayMs, error }) => {
         console.warn(
@@ -161,7 +322,7 @@ async function queryPoints(vector, limit) {
       {
         retries: 2,
         baseDelayMs: 1000,
-        timeoutMs: 5000,
+        timeoutMs: QDRANT_OPERATION_TIMEOUT_MS,
         operationName: "query Qdrant points",
       },
     );
@@ -179,7 +340,7 @@ async function queryPoints(vector, limit) {
       {
         retries: 2,
         baseDelayMs: 1000,
-        timeoutMs: 5000,
+        timeoutMs: QDRANT_OPERATION_TIMEOUT_MS,
         operationName: "search Qdrant points",
       },
     );
@@ -231,7 +392,7 @@ async function upsertDishToSemanticIndex(dish) {
     {
       retries: 2,
       baseDelayMs: 1000,
-      timeoutMs: 5000,
+      timeoutMs: QDRANT_OPERATION_TIMEOUT_MS,
       operationName: "upsert dish to Qdrant",
     },
   );
@@ -258,7 +419,7 @@ async function removeDishFromSemanticIndex(dishId) {
     {
       retries: 2,
       baseDelayMs: 1000,
-      timeoutMs: 5000,
+      timeoutMs: QDRANT_OPERATION_TIMEOUT_MS,
       operationName: "delete dish from Qdrant",
     },
   );
@@ -290,7 +451,7 @@ async function getDishPointFromSemanticIndex(dishId) {
     {
       retries: 2,
       baseDelayMs: 1000,
-      timeoutMs: 5000,
+      timeoutMs: QDRANT_OPERATION_TIMEOUT_MS,
       operationName: "retrieve dish from Qdrant",
     },
   );
@@ -308,6 +469,7 @@ module.exports = {
   buildDishPayload,
   COLLECTION_NAME,
   EMBEDDING_MODEL,
+  deriveDishMetadata,
   generateEmbeddingFromText,
   getDishPointId,
   getDishPointFromSemanticIndex,
