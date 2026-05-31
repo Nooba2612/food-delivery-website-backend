@@ -2,15 +2,17 @@ const { jwtDecode } = require("jwt-decode");
 const jwt = require("jsonwebtoken");
 
 const getPayload = (user) => {
-    // Safely extract values from Sequelize instance or plain object
     const userId = user?.dataValues?.userId || user?.userId || user?.dataValues?.user_id || user?.user_id;
     const username = user?.dataValues?.username || user?.username;
     const role = user?.dataValues?.role || user?.role;
+
+    const tokenVersion = user?.dataValues?.tokenVersion ?? user?.tokenVersion ?? 0;
 
     return {
         user_id: userId,
         username: username,
         role: role,
+        tokenVersion: tokenVersion,
     };
 };
 
@@ -36,7 +38,7 @@ const generateTokens = (user, customAccessExpires, customRefreshExpires) => {
 };
 
 const parseExpiry = (expiry) => {
-    if (!expiry) return 3600 * 1000; // default 1h
+    if (!expiry) return 3600 * 1000; 
     const value = parseInt(expiry);
     const unit = expiry.slice(-1);
 

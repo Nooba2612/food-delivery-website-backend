@@ -18,10 +18,8 @@ app.set("trust proxy", 1);
 
 app.use(express.json());
 
-// using middlewares
 useMiddlewares(app);
 
-// Swagger UI
 app.use(
   "/api-docs",
   swaggerUi.serve,
@@ -32,14 +30,11 @@ app.use(
   }),
 );
 
-// routing
 routes(app);
 
-// Global Error Handler
 const errorHandler = require("@core/middlewares/errorHandler");
 app.use(errorHandler);
 
-// Store io instance globally for services to access
 app.set("io", null);
 
 const appReady = (async () => {

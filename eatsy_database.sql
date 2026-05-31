@@ -42,6 +42,7 @@ CREATE TABLE Users (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     last_login DATETIME NULL,
     is_online BOOLEAN DEFAULT TRUE,
+    token_version INT DEFAULT 0,
     payment_method_id INT,
 FOREIGN KEY (payment_method_id) REFERENCES PaymentMethods(payment_method_id)
 );
@@ -527,7 +528,9 @@ VALUES
 ('Hoàng Minh Đức', 'hoangminhduc', 'hoangminhduc@gmail.com', '905678901', '+84', '$2a$10$dummyhash5', 'Standard', 'Customer'),
 ('Nguyễn Phan Minh Mẫn', 'minhman910', 'nguyenphanminhman04@gmail.com', '909943237', '+84', '$2b$10$VW2.qXqtf2sPkOy77rlA.eWEpP53pzWD4z77ZWFj9ZTeGBsq63tDC', 'Standard', 'Customer'),
 ('Thân Hoàng Thiên Thiên', 'thienthien114', 'thanhoangthienthien@gmail.com', '379767728', '+84', '$2b$10$VW2.qXqtf2sPkOy77rlA.eWEpP53pzWD4z77ZWFj9ZTeGBsq63tDC', 'Standard', 'Customer'),
-('Việt', 'viet', 'viet@example.com', '389287349', '+84', '$2b$10$4dqpbdZoGYM/rh6eyWvjouixgDlWJJCdxAHx8gk8F.5tnEgB.lOrq', 'Standard', 'Customer');
+('Việt', 'viet', 'viet@example.com', '389287349', '+84', '$2b$10$4dqpbdZoGYM/rh6eyWvjouixgDlWJJCdxAHx8gk8F.5tnEgB.lOrq', 'Standard', 'Customer'),
+('Admin 1', 'admin1', 'admin1@eatsy.vn', '0999999991', '+84', '$2b$10$/uHXsyez/.7GpxqGFAkRFerogUWTyK/9TbivlIYM/yyGQXJtfqzLq', 'Standard', 'Admin'),
+('Admin 2', 'admin2', 'admin2@eatsy.vn', '0999999992', '+84', '$2b$10$/uHXsyez/.7GpxqGFAkRFerogUWTyK/9TbivlIYM/yyGQXJtfqzLq', 'Standard', 'Admin');
 
 
 -- Get user IDs and dish IDs for reviews
