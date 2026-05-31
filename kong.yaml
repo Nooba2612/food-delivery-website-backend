@@ -2,7 +2,7 @@ _format_version: "3.0"
 services:
   # 1. Service xu ly REST API
   - name: eatsy-backend-api
-    url: http://host.docker.internal:5678
+    url: http://backend:5678
     retries: 2
     connect_timeout: 3000#
     write_timeout: 5000
@@ -30,7 +30,7 @@ services:
 
   # 2. Service xu ly WebSockets (Chat/Call)
   - name: eatsy-backend-ws
-    url: http://host.docker.internal:5678
+    url: http://backend:5678
     retries: 2
     connect_timeout: 3000
     write_timeout: 5000
@@ -46,7 +46,7 @@ services:
 
   # 3. Service bao ve luong thanh toan VNPay va Checkout
   - name: eatsy-payment-secure
-    url: http://host.docker.internal:5678
+    url: http://backend:5678
     retries: 2
     connect_timeout: 3000
     write_timeout: 5000
@@ -71,7 +71,7 @@ services:
 
   # 4. Service xu ly tai nguyen tinh va trang thai backend
   - name: eatsy-backend-static
-    url: http://host.docker.internal:5678
+    url: http://backend:5678
     retries: 2
     connect_timeout: 3000
     write_timeout: 5000
