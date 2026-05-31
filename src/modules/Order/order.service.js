@@ -9,6 +9,7 @@ const dishService = require("@modules/Dish/dish.service");
 const addressService = require("@modules/User/address.service");
 const voucherService = require("@modules/Voucher/voucher.service");
 const authUserService = require("@modules/Auth/user.service");
+const { orderQueue } = require("@core/config/queue");
 
 const ORDER_DISH_ATTRIBUTES = [
   "dish_id",
@@ -231,6 +232,34 @@ const OrderService = {
 
       await cartService.clearCartByUserId(userId, transaction);
       await transaction.commit();
+
+      // Fire-and-forget: publish ORDER_CREATED event to queue
+      try {
+        const user = await authUserService.getUserById(userId);
+        if (user && user.email) {
+          orderQueue.add(
+            "ORDER_CREATED",
+            {
+              orderId,
+              email: user.email,
+              total: finalAmount,
+              items: validatedItems.map((item) => ({
+                name: item.name,
+                quantity: item.quantity,
+                price: item.price,
+              })),
+            },
+            {
+              attempts: 3,
+              backoff: { type: "exponential", delay: 5000 },
+            },
+          ); // No await — fire and forget to avoid blocking response
+          console.log(`[Order] ORDER_CREATED event queued for order ${orderId}`);
+        }
+      } catch (queueError) {
+        // Queue failure should NOT affect the order response
+        console.error(`[Order] Failed to queue ORDER_CREATED event: ${queueError.message}`);
+      }
 
       return {
         order_id: orderId,
