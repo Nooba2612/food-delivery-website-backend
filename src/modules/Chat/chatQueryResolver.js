@@ -284,7 +284,27 @@ function createChatQueryResolver(deps) {
     return hasReference && asksForExplanation;
   }
 
+  function isGenericCategoryBrowsingRequest(message, query) {
+    const hasOrdinalReference =
+      extractOrdinalReferenceIndex(message) !== null;
+    const hasDirectContextReference = hasContextReference(message);
+
+    return Boolean(
+      (query.categoryRule || query.ingredientRule) &&
+        !hasOrdinalReference &&
+        !hasDirectContextReference &&
+        !query.explicitPrices?.length &&
+        !query.wantsCheapest &&
+        !query.wantsMostExpensive &&
+        !query.wantsCount,
+    );
+  }
+
   function detectQueryIntent(message, query) {
+    if (isGenericCategoryBrowsingRequest(message, query)) {
+      return "list";
+    }
+
     if (query.wantsPurchase) {
       return "purchase";
     }
@@ -529,7 +549,22 @@ function createChatQueryResolver(deps) {
     return filteredDishes;
   }
 
+  function shouldDelegateToGeneralRetrieval(query) {
+    return Boolean(
+      (query.categoryRule || query.ingredientRule) &&
+        !query.wantsCategoryCheck,
+    );
+  }
+
   async function resolveDishesFromQuery(query, limit = 12) {
+    if (shouldDelegateToGeneralRetrieval(query)) {
+      return {
+        shouldHandle: false,
+        dishes: [],
+        retrievalMode: "delegate_general_retrieval",
+      };
+    }
+
     if (!query.categoryRule && !query.ingredientRule) {
       return {
         shouldHandle: false,
@@ -940,6 +975,10 @@ function createChatQueryResolver(deps) {
       return null;
     }
 
+    if (shouldDelegateToGeneralRetrieval(query)) {
+      return null;
+    }
+
     // Prefer natural LLM follow-up answers over canned DB summaries when the
     // user is asking about a referenced item from prior dialogue.
     if (query.wantsReferenceQuestion && query.intent === "list") {
@@ -1042,16 +1081,29 @@ function createChatQueryResolver(deps) {
     memoryContext,
   }) {
     const query = buildQuerySchema(message, chatHistory);
+    const hasRelativePriceRequest =
+      hasCheaperPreference(message) || hasMoreExpensivePreference(message);
 
     if (
       query.intent !== "purchase" &&
-      !hasCheaperPreference(message) &&
-      !hasMoreExpensivePreference(message)
+      !hasRelativePriceRequest
     ) {
       return null;
     }
 
     const historyCards = getBestAssistantCardsForReference(chatHistory, message);
+    const referencedCard = normalizeCardLike(memoryContext.referencedCard);
+    const hasExplicitTargetReference = Boolean(
+      referencedCard ||
+        resolveCardByName(message, historyCards) ||
+        extractOrdinalReferenceIndex(message) !== null ||
+        hasContextReference(message),
+    );
+
+    if (hasRelativePriceRequest && !hasExplicitTargetReference) {
+      return null;
+    }
+
     const latestAssistantText = getLatestAssistantTextFromChatHistory(chatHistory);
     const entityResolved = await resolveDishesFromQuery(
       query,
@@ -1072,7 +1124,6 @@ function createChatQueryResolver(deps) {
       buildDishCardPayload,
     );
     const retrievalCards = relevantRetrieval.dishes.map(buildDishCardPayload);
-    const referencedCard = normalizeCardLike(memoryContext.referencedCard);
     const contextualCards = shouldPreferResolvedCategoryCards(query, chatHistory)
       ? uniqueCards([...retrievalCards, ...latestAssistantCards])
       : uniqueCards([...historyCards, ...latestAssistantCards]);

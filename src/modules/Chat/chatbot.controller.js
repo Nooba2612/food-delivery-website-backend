@@ -17,13 +17,16 @@ const {
 } = require("./memoryEngine");
 const { createChatQueryResolver } = require("./chatQueryResolver");
 
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const openai = new OpenAI({
-  apiKey: process.env.FREELLMAPI_API_KEY || "dummy-key",
-  baseURL: process.env.FREELLMAPI_BASE_URL || "http://localhost:3001/v1",
+  apiKey: process.env.FREELLMAPI_API_KEY || GEMINI_API_KEY || "dummy-key",
+  baseURL:
+    process.env.FREELLMAPI_BASE_URL ||
+    "https://generativelanguage.googleapis.com/v1beta/openai",
 });
 
 const CHAT_MODEL =
-  process.env.FREELLMAPI_MODEL || "google/gemini-2.5-flash-lite";
+  process.env.FREELLMAPI_MODEL || "gemini-2.5-flash";
 const BACKEND_URL = process.env.BASE_URL || "http://localhost:5678";
 const CHAT_DEBUG_TRACE = String(process.env.CHAT_DEBUG_TRACE || "").toLowerCase() === "true";
 const CHAT_COMPLETION_TIMEOUT_MS = Number(
@@ -273,7 +276,6 @@ function hasContextReference(message) {
     normalizedMessage.includes("mon nay") ||
     normalizedMessage.includes("cai nay") ||
     normalizedMessage.includes("mon kia") ||
-    normalizedMessage.includes("goi y") ||
     normalizedMessage.includes("mon khac")
   );
 }
@@ -703,6 +705,32 @@ function buildFallbackDishCards(dishes) {
   return dishes.slice(0, 3).map(buildDishCardPayload);
 }
 
+function extractDishCardsFromReply(reply) {
+  const matches = String(reply || "").match(/\[DISH_CARD:\s*(\{.*?\})\]/g) || [];
+
+  return matches
+    .map((match) => {
+      const jsonPayload = match.match(/\[DISH_CARD:\s*(\{.*?\})\]/)?.[1];
+      if (!jsonPayload) {
+        return null;
+      }
+
+      try {
+        const parsed = JSON.parse(jsonPayload);
+        return {
+          id: parsed.id || null,
+          name: parsed.name || "Món ăn",
+          price: Number(parsed.price || 0),
+          image: parsed.image || "",
+          rating: Number(parsed.rating || 0),
+        };
+      } catch (_error) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
 function buildPurchaseReply(card) {
   const normalizedCard = card || {};
   const formattedPrice = Number(normalizedCard.price || 0).toLocaleString(
@@ -769,10 +797,10 @@ const chat = async (req, res) => {
       });
     }
 
-    if (!process.env.FREELLMAPI_API_KEY) {
+    if (!process.env.FREELLMAPI_API_KEY && !GEMINI_API_KEY) {
       return res.status(500).json({
         success: false,
-        message: "Thiếu cấu hình FREELLMAPI_API_KEY.",
+        message: "Thiếu cấu hình GEMINI_API_KEY hoặc FREELLMAPI_API_KEY.",
       });
     }
 
@@ -983,18 +1011,20 @@ const chat = async (req, res) => {
     traceChatFlow("llm_completion_received", {
       sessionId,
       model: CHAT_MODEL,
-      provider: "freellmapi",
+      provider: "gemini_openai_compat",
       finishReason: completion?.choices?.[0]?.finish_reason || null,
       usage: completion?.usage || null,
       replyPreview: String(aiReply || "").slice(0, 240),
     });
-    const fallbackCards = buildFallbackDishCards(relevantDishes);
-    recordAssistantTurn(sessionId, aiReply || "", fallbackCards);
+    const parsedCards = extractDishCardsFromReply(aiReply);
+    const responseCards =
+      parsedCards.length > 0 ? parsedCards : buildFallbackDishCards(relevantDishes);
+    recordAssistantTurn(sessionId, aiReply || "", responseCards);
     traceChatFlow("response_ready", {
       sessionId,
       replyPreview: String(aiReply || "").slice(0, 240),
-      attachedCards: fallbackCards.map((card) => card?.name),
-      attachedCardCount: fallbackCards.length,
+      attachedCards: responseCards.map((card) => card?.name),
+      attachedCardCount: responseCards.length,
     });
 
     return res.status(200).json({
@@ -1002,12 +1032,12 @@ const chat = async (req, res) => {
       data: {
         reply:
           aiReply || "Mình chưa tạo được câu trả lời. Bạn thử hỏi lại nhé.",
-        cards: fallbackCards,
+        cards: responseCards,
         meta: {
           dishes_retrieved: relevantDishes.length,
           history_window: history.length,
           model: CHAT_MODEL,
-          provider: "freellmapi",
+          provider: "gemini_openai_compat",
           semantic_enabled: isSemanticSearchEnabled(),
           retrieval_mode: retrievalMode,
           retrieval_query: memoryContext.retrievalQuery,
@@ -1022,7 +1052,7 @@ const chat = async (req, res) => {
     if (error.status === 401) {
       return res.status(500).json({
         success: false,
-        message: "FreeLLMAPI key không hợp lệ. Vui lòng kiểm tra cấu hình.",
+        message: "Gemini API key không hợp lệ. Vui lòng kiểm tra cấu hình.",
       });
     }
 
@@ -1030,14 +1060,14 @@ const chat = async (req, res) => {
       return res.status(503).json({
         success: false,
         message:
-          "FreeLLMAPI đang chạm giới hạn quota hoặc rate limit. Vui lòng thử lại sau.",
+          "Gemini API đang chạm giới hạn quota hoặc rate limit. Vui lòng thử lại sau.",
       });
     }
 
     if (error.code === "ECONNREFUSED" || error.cause?.code === "ECONNREFUSED") {
       return res.status(503).json({
         success: false,
-        message: "Không thể kết nối tới FreeLLMAPI server.",
+        message: "Không thể kết nối tới Gemini OpenAI-compatible endpoint.",
       });
     }
 
