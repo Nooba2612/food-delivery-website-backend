@@ -50,4 +50,7 @@ const appReady = (async () => {
 
 app.set("appReady", appReady);
 
+// Start BullMQ workers
+require("./workers/order.worker");
+
 module.exports = app;
