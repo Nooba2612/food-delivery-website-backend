@@ -63,11 +63,15 @@ const User = sequelize.define(
       defaultValue: true,
       field: "is_online",
     },
+    tokenVersion: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      field: "token_version",
+    },
   },
   {
     tableName: "Users",
   },
 );
 
-// Remove circular dependency - associations handled in index.js
 module.exports = User;

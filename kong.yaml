@@ -4,7 +4,7 @@ services:
   - name: eatsy-backend-api
     url: http://host.docker.internal:5678
     retries: 2
-    connect_timeout: 3000
+    connect_timeout: 3000#
     write_timeout: 5000
     read_timeout: 5000
     routes:

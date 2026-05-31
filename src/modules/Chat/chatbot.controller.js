@@ -16,7 +16,7 @@ const {
 } = require("./memoryEngine");
 
 const openai = new OpenAI({
-  apiKey: process.env.FREELLMAPI_API_KEY,
+  apiKey: process.env.FREELLMAPI_API_KEY || "dummy-key",
   baseURL: process.env.FREELLMAPI_BASE_URL || "http://localhost:3001/v1",
 });
 
