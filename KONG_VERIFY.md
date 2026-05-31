@@ -10,6 +10,8 @@
    `npm run verify:kong:lite`
 4. Run the full verification when you also want to confirm rate limiting:
    `npm run verify:kong`
+5. For Gemini embeddings after changing the embedding model, rebuild the vector data:
+   `npm run ingest:dishes`
 
 ## What the script checks
 
@@ -33,6 +35,7 @@
 - CORS preflight for `http://localhost:3000`
 - Socket.IO polling handshake through `http://localhost:8000/socket.io`
 - Rate limiting returns `429` after repeated calls to `POST /api/orders`
+- Rate limiting returns `429` after repeated calls to `POST /api/chat` once the per-IP budget exceeds 30 requests per minute
 
 ## Manual checks after script passes
 
@@ -43,15 +46,18 @@
    `http://localhost:8000/api/auth/facebook/redirect`
 4. Open chat or call features and confirm realtime events work after page refresh.
 5. Trigger checkout or VNPay flow carefully and confirm the frontend shows the `429` toast when spamming requests.
+6. Open the chat UI and confirm each IP is throttled after around 30 AI questions in the same minute.
 
 ## Notes
 
 - Prefer `verify:kong:lite` while debugging config repeatedly.
 - The rate-limit check intentionally consumes the current minute budget for the configured test path.
 - The protected business prefixes in Kong are `/api/orders`, `/api/payments`, and `/api/vnpay`.
+- The AI chat route `/api/chat` is rate-limited to 30 requests per minute per IP.
 - Kong service retry is configured in `kong.yaml` with `retries: 2`, `connect_timeout: 3000`, `write_timeout: 5000`, and `read_timeout: 5000`.
 - Backend outbound calls also retry up to 2 more times with exponential backoff for network, timeout, or upstream `5xx` failures.
 - Current retry coverage in the backend includes email SMTP, AWS S3 upload, dish embedding generation, Qdrant semantic search, and chatbot completion generation.
+- After switching the embedding model away from `qwen3-embedding:0.6b`, old vectors in Qdrant are no longer dimension-compatible. Run `npm run ingest:dishes` to recreate the collection with the new embedding size.
 - If you rerun the script immediately, the rate-limit test may still be blocked until the minute window resets.
 - You can override script defaults manually:
   `powershell -ExecutionPolicy Bypass -File ./scripts/verify-kong.ps1 -GatewayBaseUrl http://localhost:8000`

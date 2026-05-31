@@ -3,13 +3,19 @@ const { QdrantClient } = require("@qdrant/js-client-rest");
 const { retryAsync } = require("@core/utils/retry");
 
 const COLLECTION_NAME = process.env.QDRANT_COLLECTION_NAME || "eatsy_dishes";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const EMBEDDING_MODEL =
   process.env.EMBEDDING_MODEL ||
   process.env.FREELLMAPI_EMBEDDING_MODEL ||
-  "qwen3-embedding:0.6b";
+  "gemini-embedding-001";
 const EMBEDDING_BASE_URL =
-  process.env.EMBEDDING_BASE_URL || "http://127.0.0.1:11434/v1";
-const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || "ollama";
+  process.env.EMBEDDING_BASE_URL ||
+  "https://generativelanguage.googleapis.com/v1beta/openai";
+const EMBEDDING_API_KEY =
+  process.env.EMBEDDING_API_KEY ||
+  process.env.FREELLMAPI_API_KEY ||
+  GEMINI_API_KEY ||
+  "";
 const EMBEDDING_TIMEOUT_MS = Number(process.env.EMBEDDING_TIMEOUT_MS || 20000);
 const QDRANT_OPERATION_TIMEOUT_MS = Number(
   process.env.QDRANT_OPERATION_TIMEOUT_MS || 10000,
