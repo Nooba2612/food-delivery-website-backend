@@ -3,6 +3,7 @@
 /**
  * Module dependencies.
  */
+require('dotenv').config();
 
 const babelRegister = require("@babel/register");
 

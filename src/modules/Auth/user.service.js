@@ -20,6 +20,7 @@ const USER_SAFE_ATTRIBUTES = [
   "paymentMethodId",
   "lastLogin",
   "isOnline",
+  "tokenVersion",
   "createdAt",
   "updatedAt",
 ];

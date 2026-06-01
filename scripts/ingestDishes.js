@@ -3,7 +3,7 @@
  *  REAL DATA INGESTION SCRIPT — ingestDishes.js
  * ============================================================
  *  Mục đích: Lấy dữ liệu THẬT từ bảng MySQL 'Dishes' thông qua
- *  Sequelize, tạo vector embedding local và lưu vào Qdrant.
+ *  Sequelize, tạo vector embedding từ Gemini và lưu vào Qdrant.
  * ============================================================
  */
 
@@ -53,7 +53,7 @@ async function ensureCollectionExists(vectorSize) {
  * CHÍNH: Lấy dữ liệu từ MySQL và nạp vào Qdrant
  */
 async function ingestRealData() {
-    console.log("🚀 Bắt đầu lấy dữ liệu THẬT từ MySQL, tạo embedding local và nạp vào Qdrant...\n");
+    console.log("🚀 Bắt đầu lấy dữ liệu THẬT từ MySQL, tạo embedding Gemini và nạp vào Qdrant...\n");
 
     try {
         // Bước 1: Query toàn bộ món ăn từ SQL (kèm theo Category để lấy tên danh mục)
