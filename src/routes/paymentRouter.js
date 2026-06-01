@@ -13,6 +13,7 @@ router.get(
     authAdminMiddleware,
     paymentController.getPendingPayments,
 );
+router.get('/:id/status', authMiddleware, paymentController.getPaymentStatus);
 router.post(
     '/:id/confirm',
     authAdminMiddleware,
