@@ -22,7 +22,7 @@ const {
 async function run() {
   if (!isSemanticSearchEnabled()) {
     throw new Error(
-      "Semantic search chưa được cấu hình. Kiểm tra QDRANT_URL, EMBEDDING_BASE_URL và EMBEDDING_API_KEY.",
+      "Semantic search chưa được cấu hình. Kiểm tra QDRANT_URL, EMBEDDING_BASE_URL và GEMINI_API_KEY/EMBEDDING_API_KEY.",
     );
   }
 

@@ -1,10 +1,44 @@
 _format_version: "3.0"
 services:
+  # 0. Service uu tien cho chatbot vi can thoi gian cho retrieval + LLM
+  - name: eatsy-chat-api
+    url: http://backend:5678
+    retries: 1
+    connect_timeout: 5000
+    write_timeout: 15000
+    read_timeout: 120000
+    routes:
+      - name: chat-routes
+        paths:
+          - /api/chat
+        strip_path: false
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - http://localhost:3000
+            - http://localhost:1234
+            - http://localhost:1235
+          methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+          headers: ["Accept", "Accept-Version", "Content-Length", "Content-MD5", "Content-Type", "Date", "Authorization"]
+          exposed_headers: ["X-Auth-Token"]
+          credentials: true
+          max_age: 3600
+      - name: rate-limiting
+        config:
+          minute: 30
+          policy: local
+          fault_tolerant: true
+          hide_client_headers: false
+
   # 1. Service xu ly REST API
   - name: eatsy-backend-api
     url: http://backend:5678
     retries: 2
-    connect_timeout: 3000#
+    connect_timeout: 3000
     write_timeout: 5000
     read_timeout: 5000
     routes:
