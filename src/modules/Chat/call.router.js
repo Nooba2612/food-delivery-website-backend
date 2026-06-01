@@ -36,7 +36,8 @@ const { authMiddleware } = require("@core/middlewares/authMiddleware");
  *       400:
  *         description: Bad request
  */
-router.post("/", callController.initiateCall);
+router.post("/", authMiddleware, callController.initiateCall);
+
 
 /**
  * @swagger

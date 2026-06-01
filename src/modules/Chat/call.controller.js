@@ -9,19 +9,9 @@ const { getUserById } = require("@modules/User/user.service");
  */
 const initiateCall = async (req, res) => {
   try {
-    console.log("🔴 [ENTER initiateCall] - Request received!");
-    console.log("🔴 Headers:", req.headers);
-    console.log("🔴 req.user:", req.user);
-
     const userId = req.user?.user_id;
     const { recipientId, conversationId, callType } = req.body;
     const io = req.app.get("io");
-
-    console.log(`📞 initiateCall request from ${userId}:`, {
-      recipientId,
-      conversationId,
-      callType,
-    });
 
     // Validation with detailed error messages
     if (!recipientId) {
@@ -63,17 +53,12 @@ const initiateCall = async (req, res) => {
       });
     }
 
-    console.log(`✅ Validation passed, calling CallService.initiateCall...`);
     const call = await CallService.initiateCall(
       userId,
       recipientId,
       conversationId,
       callType,
     );
-    console.log(`✅ Call created:`, {
-      call_id: call.call_id,
-      status: call.status,
-    });
 
     // Fetch fresh user data to get full name and avatar (not always in JWT)
     const initiator = await getUserById(userId);
@@ -99,9 +84,6 @@ const initiateCall = async (req, res) => {
         conversationId,
         timestamp: new Date().toISOString(),
       });
-      console.log(
-        `📱 incoming_call emitted to user:${recipientId} with callId: ${call.call_id} by ${callerName}`,
-      );
     }
 
     res.status(201).json({
@@ -109,11 +91,6 @@ const initiateCall = async (req, res) => {
       data: call,
     });
   } catch (error) {
-    console.error(`❌ initiateCall error:`, {
-      message: error.message,
-      stack: error.stack,
-      code: error.code,
-    });
     res.status(400).json({
       success: false,
       message: error.message,
@@ -162,13 +139,6 @@ const acceptCall = async (req, res) => {
       req.user?.socket_id || "",
     );
 
-    console.log(`✅ Call accepted: ${callId}`, {
-      initiator_id: call.initiator_id,
-      recipient_id: userId,
-      io_exists: !!io,
-    });
-
-    // Emit event to initiator
     if (io && call.initiator_id) {
       io.to(`user:${call.initiator_id}`).emit("call_accepted", {
         callId,
@@ -177,14 +147,6 @@ const acceptCall = async (req, res) => {
         recipientName: req.user?.full_name || req.user?.username || "Unknown",
         recipientAvatar: req.user?.avatar || null,
         timestamp: new Date().toISOString(),
-      });
-      console.log(
-        `📱 call_accepted emitted to user:${call.initiator_id} with callId: ${callId}`,
-      );
-    } else {
-      console.warn(`⚠️  Cannot emit call_accepted:`, {
-        has_io: !!io,
-        initiator_id: call.initiator_id,
       });
     }
 
@@ -537,7 +499,6 @@ const initiateGroupCall = async (req, res) => {
           });
         }
       });
-      console.log(`📱 Group incoming_call emitted by ${callerName}`);
     }
 
     res.status(201).json({

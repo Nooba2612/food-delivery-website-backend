@@ -195,7 +195,6 @@ router.get(
  */
 router.post('/', authMiddleware, chatController.getOrCreateDirectConversation);
 
-// Create group conversation
 /**
  * @swagger
  * /api/conversations/group:
@@ -261,6 +260,29 @@ router.post(
   authMiddleware,
   conversationUpload.single("avatar"),
   chatController.createGroupConversation,
+);
+
+/**
+ * @swagger
+ * /api/conversations/order-support:
+ *   post:
+ *     summary: Create order support group
+ *     tags:
+ *       - Chat - Conversations
+ *     security:
+ *       - BearerAuth: []
+ */
+router.post(
+  "/order-support",
+  authMiddleware,
+  chatController.createOrderSupportGroup,
+);
+
+// Update ticket status
+router.put(
+  "/:conversationId/ticket-status",
+  authMiddleware,
+  chatController.updateTicketStatus,
 );
 
 // Get conversation details

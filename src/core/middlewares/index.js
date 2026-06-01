@@ -19,6 +19,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:1234",
   "http://localhost:1235",
+  "http://localhost:5173",
 ];
 const publicDir = path.join(process.cwd(), "src", "public");
 
