@@ -7,6 +7,11 @@ const dishService = require("@modules/Dish/dish.service");
 
 const DISH_REVIEW_ATTRIBUTES = ["dish_id", "name", "thumbnail_path"];
 
+/**
+ * Formats a raw review object by appending detailed user information.
+ * @param {Object} review - The raw review model instance or plain object.
+ * @returns {Promise<Object>} A Promise resolving to the formatted review object.
+ */
 const formatReviewWithUser = async (review) => {
   const plainReview =
     typeof review.get === "function" ? review.get({ plain: true }) : review;
@@ -28,6 +33,11 @@ const formatReviewWithUser = async (review) => {
 };
 
 const reviewService = {
+  /**
+   * Retrieves all reviews associated with a specific dish.
+   * @param {string} dishId - The unique identifier of the dish.
+   * @returns {Promise<Array>} A Promise resolving to an array of formatted review objects.
+   */
   getReviewsByDish: async (dishId) => {
     const reviews = await reviewModel.findAll({
       where: { dish_id: dishId },
@@ -37,6 +47,17 @@ const reviewService = {
     return Promise.all(reviews.map(formatReviewWithUser));
   },
 
+  /**
+   * Creates a new review for a dish.
+   * Ensures the user hasn't already reviewed the dish and valid data is provided.
+   * @param {Object} params - The review creation parameters.
+   * @param {string} params.userId - The unique identifier of the user creating the review.
+   * @param {string} params.dishId - The unique identifier of the dish being reviewed.
+   * @param {number} params.points - The rating points (0-5).
+   * @param {string} params.content - The text content of the review.
+   * @returns {Promise<Object>} A Promise resolving to the created and formatted review object.
+   * @throws {AppError} If validation fails or the user has already reviewed the dish.
+   */
   createReview: async ({ userId, dishId, points, content }) => {
     const t = await sequelize.transaction();
 
@@ -88,6 +109,17 @@ const reviewService = {
     }
   },
 
+  /**
+   * Updates an existing review.
+   * Verifies that the user attempting the update is the original author.
+   * @param {Object} params - The review update parameters.
+   * @param {string} params.reviewId - The unique identifier of the review to update.
+   * @param {string} params.userId - The unique identifier of the user attempting the update.
+   * @param {number} [params.points] - The new rating points (optional).
+   * @param {string} [params.content] - The new text content (optional).
+   * @returns {Promise<Object>} A Promise resolving to the updated and formatted review object.
+   * @throws {AppError} If the review is not found or the user is unauthorized.
+   */
   updateReview: async ({ reviewId, userId, points, content }) => {
     const t = await sequelize.transaction();
 
@@ -124,6 +156,14 @@ const reviewService = {
     }
   },
 
+  /**
+   * Deletes a specific review.
+   * Verifies that the user attempting the deletion is the original author.
+   * @param {string} reviewId - The unique identifier of the review to delete.
+   * @param {string} userId - The unique identifier of the user attempting the deletion.
+   * @returns {Promise<void>}
+   * @throws {AppError} If the review is not found or the user is unauthorized.
+   */
   deleteReview: async (reviewId, userId) => {
     const t = await sequelize.transaction();
 
@@ -146,6 +186,12 @@ const reviewService = {
     }
   },
 
+  /**
+   * Retrieves all reviews created by a specific user.
+   * Appends dish details to each review.
+   * @param {string} userId - The unique identifier of the user.
+   * @returns {Promise<Array>} A Promise resolving to an array of formatted review objects with dish details.
+   */
   getUserReviews: async (userId) => {
     const reviews = await reviewModel.findAll({
       where: { user_id: userId },
@@ -178,6 +224,12 @@ const reviewService = {
   },
 };
 
+/**
+ * Calculates and updates the average rating and total review count for a dish.
+ * @param {string} dishId - The unique identifier of the dish.
+ * @param {Object} transaction - The Sequelize transaction object.
+ * @returns {Promise<void>}
+ */
 const updateDishRating = async (dishId, transaction) => {
   const reviews = await reviewModel.findAll({
     where: { dish_id: dishId },
