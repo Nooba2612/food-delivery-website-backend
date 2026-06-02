@@ -17,6 +17,12 @@ const DISH_ATTRIBUTES = [
   "brand",
 ];
 
+/**
+ * Retrieves the cart associated with a specific user.
+ * @param {string} userId - The unique identifier of the user.
+ * @param {Object} [transaction=null] - Optional Sequelize transaction.
+ * @returns {Promise<Object|null>} A Promise resolving to the cart object or null if not found.
+ */
 const getCartByUserId = async (userId, transaction = null) => {
   return cartModel.findOne({
     where: { user_id: userId },
@@ -24,6 +30,12 @@ const getCartByUserId = async (userId, transaction = null) => {
   });
 };
 
+/**
+ * Retrieves the cart for a user or creates a new one if it doesn't exist.
+ * @param {string} userId - The unique identifier of the user.
+ * @param {Object} [transaction=null] - Optional Sequelize transaction.
+ * @returns {Promise<Object>} A Promise resolving to the existing or newly created cart object.
+ */
 const getOrCreateCart = async (userId, transaction = null) => {
   let cart = await getCartByUserId(userId, transaction);
   if (!cart) {
@@ -35,6 +47,12 @@ const getOrCreateCart = async (userId, transaction = null) => {
   return cart;
 };
 
+/**
+ * Retrieves all items within a specific cart.
+ * @param {string} cartId - The unique identifier of the cart.
+ * @param {Object} [transaction=null] - Optional Sequelize transaction.
+ * @returns {Promise<Array>} A Promise resolving to an array of cart items.
+ */
 const getCartItems = async (cartId, transaction = null) => {
   return cartItemModel.findAll({
     where: { cart_id: cartId },
@@ -43,6 +61,11 @@ const getCartItems = async (cartId, transaction = null) => {
   });
 };
 
+/**
+ * Enriches raw cart items with detailed dish information, availability status, and calculates totals.
+ * @param {Array} items - The raw array of cart items from the database.
+ * @returns {Promise<Object>} A Promise resolving to an object containing enriched items, totalQuantity, and totalAmount.
+ */
 const enrichCartItems = async (items) => {
   const plainItems = items.map((item) =>
     typeof item.get === "function" ? item.get({ plain: true }) : item,
@@ -84,6 +107,11 @@ const enrichCartItems = async (items) => {
   return { items: enrichedItems, ...totals };
 };
 
+/**
+ * Retrieves and enriches all cart items for a specific user.
+ * @param {string} userId - The unique identifier of the user.
+ * @returns {Promise<Object>} A Promise resolving to the enriched cart data including items and totals.
+ */
 const getCartItemsByUserId = async (userId) => {
   const cart = await getCartByUserId(userId);
   if (!cart) {
@@ -94,6 +122,12 @@ const getCartItemsByUserId = async (userId) => {
   return enrichCartItems(cartItems);
 };
 
+/**
+ * Retrieves a snapshot of the cart and its items suitable for order creation.
+ * @param {string} userId - The unique identifier of the user.
+ * @param {Object} [transaction=null] - Optional Sequelize transaction.
+ * @returns {Promise<Object>} A Promise resolving to an object containing plain cart and item data.
+ */
 const getCartSnapshotForOrder = async (userId, transaction = null) => {
   const cart = await getCartByUserId(userId, transaction);
   if (!cart) {
@@ -109,6 +143,15 @@ const getCartSnapshotForOrder = async (userId, transaction = null) => {
   };
 };
 
+/**
+ * Adds a new item to the user's cart or increments the quantity if it already exists.
+ * Validates dish availability and stock before adding.
+ * @param {string} userId - The unique identifier of the user.
+ * @param {string} dishId - The unique identifier of the dish to add.
+ * @param {number} quantity - The quantity to add.
+ * @returns {Promise<Object>} A Promise resolving to the updated and enriched cart data.
+ * @throws {AppError} If user not found, dish unavailable, or stock insufficient.
+ */
 const addCartItem = async (userId, dishId, quantity) => {
   const transaction = await sequelize.transaction();
 
@@ -169,6 +212,15 @@ const addCartItem = async (userId, dishId, quantity) => {
   }
 };
 
+/**
+ * Updates the quantity of a specific item in the user's cart.
+ * Removes the item if the quantity is 0 or less.
+ * @param {string} userId - The unique identifier of the user.
+ * @param {string} cartItemId - The unique identifier of the cart item to update.
+ * @param {number} quantity - The new quantity to set.
+ * @returns {Promise<Object>} A Promise resolving to the updated and enriched cart data.
+ * @throws {AppError} If cart/item not found, dish unavailable, or stock insufficient.
+ */
 const updateCartItemQuantity = async (userId, cartItemId, quantity) => {
   const transaction = await sequelize.transaction();
 
@@ -215,6 +267,12 @@ const updateCartItemQuantity = async (userId, cartItemId, quantity) => {
   }
 };
 
+/**
+ * Deletes a specific item from the user's cart.
+ * @param {string} userId - The unique identifier of the user.
+ * @param {string} cartItemId - The unique identifier of the cart item to remove.
+ * @returns {Promise<Object>} A Promise resolving to the updated and enriched cart data.
+ */
 const deleteCartItem = async (userId, cartItemId) => {
   const cart = await getCartByUserId(userId);
   if (!cart) {
@@ -228,6 +286,13 @@ const deleteCartItem = async (userId, cartItemId) => {
   return getCartItemsByUserId(userId);
 };
 
+/**
+ * Clears all items from the user's cart.
+ * Can be part of a larger transaction (e.g., during order creation).
+ * @param {string} userId - The unique identifier of the user.
+ * @param {Object} [transaction=null] - Optional Sequelize transaction.
+ * @returns {Promise<Object>} A Promise resolving to an empty cart state structure.
+ */
 const clearCartByUserId = async (userId, transaction = null) => {
   const executeClear = async (activeTransaction) => {
     const cart = await getCartByUserId(userId, activeTransaction);
