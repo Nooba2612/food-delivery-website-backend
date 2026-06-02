@@ -4,7 +4,6 @@ const { sequelize } = require("@core/config/sequelize");
 const { v4: uuidv4 } = require("uuid");
 
 const AddressService = {
-  // Get all addresses for user
   getAddressesByUserId: async (userId) => {
     try {
       const addresses = await addressModel.findAll({
@@ -20,7 +19,6 @@ const AddressService = {
     }
   },
 
-  // Get default address
   getDefaultAddress: async (userId) => {
     try {
       const address = await addressModel.findOne({
@@ -42,17 +40,14 @@ const AddressService = {
     });
   },
 
-  // Create new address
   createAddress: async (userId, data) => {
     const t = await sequelize.transaction();
     try {
-      // 1. Lock user row to prevent race conditions
       const user = await authUserService.getUserById(userId, { transaction: t });
       if (!user) {
         throw new Error("User not found");
       }
 
-      // 2. Normalize & validate input
       const normalize = (val) =>
         (val || "").toString().trim().replace(/\s+/g, " ");
 
@@ -71,19 +66,17 @@ const AddressService = {
       if (ward.length > 100) throw new Error("Ward must be ≤ 100 characters");
       if (city.length > 100) throw new Error("City must be ≤ 100 characters");
 
-      // 3. Determine isDefault: ONLY true if this is the user's FIRST address
       const existingDefault = await addressModel.findOne({
         where: { userId, isDefault: true },
         transaction: t,
       });
 
-      const isDefault = !existingDefault; // true only when no default exists
+      const isDefault = !existingDefault;
 
       console.log(
         `📌 [createAddress] existingDefault: ${existingDefault?.addressId || "NONE"}, newIsDefault: ${isDefault}`,
       );
 
-      // 4. Create address (NEVER reset existing defaults)
       const addressId = uuidv4();
       const newAddress = await addressModel.create(
         { addressId, userId, street, ward, city, label, isDefault },
@@ -99,10 +92,8 @@ const AddressService = {
     }
   },
 
-  // Update address
   updateAddress: async (addressId, userId, updateData) => {
     try {
-      // Verify address belongs to user
       const address = await addressModel.findOne({
         where: { addressId, userId },
       });
@@ -110,7 +101,6 @@ const AddressService = {
         throw new Error("Address not found");
       }
 
-      // Handle default change
       if (updateData.isDefault || updateData.is_default) {
         await AddressService.setDefaultAddress(userId, addressId);
       }
@@ -122,10 +112,8 @@ const AddressService = {
     }
   },
 
-  // Delete address
   deleteAddress: async (addressId, userId) => {
     return sequelize.transaction(async (t) => {
-      // 1. Find address to check if it's default
       const address = await addressModel.findOne({
         where: { addressId, userId },
         transaction: t,
@@ -137,10 +125,8 @@ const AddressService = {
 
       const wasDefault = address.isDefault;
 
-      // 2. Delete
       await address.destroy({ transaction: t });
 
-      // 3. If deleted was default, pick a new one
       if (wasDefault) {
         const nextAddress = await addressModel.findOne({
           where: { userId },
@@ -161,14 +147,12 @@ const AddressService = {
     });
   },
 
-  // Set default address (guarantees exactly one default)
   setDefaultAddress: async (userId, addressId) => {
     return sequelize.transaction(async (t) => {
       console.log(
         `📌 [setDefaultAddress] START: userId=${userId}, addressId=${addressId}`,
       );
 
-      // 1. Validate
       if (!addressId || addressId === "undefined") {
         throw new Error("Invalid addressId");
       }
@@ -178,7 +162,6 @@ const AddressService = {
         throw new Error("User not found");
       }
 
-      // 3. Verify address exists and belongs to user
       const address = await addressModel.findOne({
         where: { addressId, userId },
         transaction: t,
@@ -188,13 +171,11 @@ const AddressService = {
         throw new Error("Address not found");
       }
 
-      // 4. Reset ALL user addresses to false
       await addressModel.update(
         { isDefault: false },
         { where: { userId }, transaction: t },
       );
 
-      // 5. Set selected address to true
       const [affectedRows] = await addressModel.update(
         { isDefault: true },
         { where: { addressId, userId }, transaction: t },
@@ -206,7 +187,6 @@ const AddressService = {
         throw new Error("Failed to set default address");
       }
 
-      // Transaction auto-commits here
     });
   },
 };

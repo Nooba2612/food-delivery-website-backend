@@ -45,12 +45,10 @@ class UserController {
     }
   };
 
-  // GET /profile - Get user profile with addresses
   getProfile = async (req, res) => {
     try {
       const userId = req.user?.user_id;
 
-      // ✅ DEBUG LOGS
       console.log("PROFILE userId:", userId);
 
       if (!userId) {
@@ -73,13 +71,11 @@ class UserController {
     }
   };
 
-  // PUT /profile - Update profile (strict requirements)
   updateProfile = async (req, res) => {
     try {
       const userId = req.user.id; // Using .id as requested
       let avatarUrl = null;
 
-      // 1. Handle S3 Upload if file provided
       if (req.file) {
         try {
           avatarUrl = await uploadToS3(req.file, "profiles");
@@ -92,13 +88,11 @@ class UserController {
         }
       }
 
-      // 2. Prepare update data (mapping avatarPath if uploaded)
       const updateData = {
         ...req.body,
         ...(avatarUrl && { avatarPath: avatarUrl }),
       };
 
-      // 3. Update via hardened service
       const profile = await updateProfile(userId, updateData);
 
       res.json({
@@ -114,7 +108,6 @@ class UserController {
     }
   };
 
-  // PUT /password - Change password
   changePassword = async (req, res) => {
     try {
       const userId = req.user.user_id;
@@ -141,12 +134,10 @@ class UserController {
     }
   };
 
-  // GET /addresses - Get all addresses
   getAddresses = async (req, res) => {
     try {
       const userId = req.user.user_id;
       const addresses = await getAddressesByUserId(userId);
-      // CRITICAL: Prevent browser from caching (avoids stale 304 responses)
       res.set("Cache-Control", "no-store, no-cache, must-revalidate");
       res.set("Pragma", "no-cache");
       res.json({
@@ -161,7 +152,6 @@ class UserController {
     }
   };
 
-  // POST /addresses - Add new address
   addAddress = async (req, res) => {
     try {
       const userId = req.user.user_id;
@@ -179,7 +169,6 @@ class UserController {
     }
   };
 
-  // PUT /addresses/:id - Update address
   updateAddress = async (req, res) => {
     try {
       const userId = req.user.user_id;
@@ -198,7 +187,6 @@ class UserController {
     }
   };
 
-  // DELETE /addresses/:id - Delete address
   deleteAddress = async (req, res) => {
     try {
       const userId = req.user.user_id;
@@ -216,7 +204,6 @@ class UserController {
     }
   };
 
-  // PUT /addresses/:id/default - Set default address
   setDefaultAddress = async (req, res) => {
     try {
       const userId = req.user.user_id;
@@ -239,7 +226,6 @@ class UserController {
     }
   };
 
-  // GET /orders - Get user order history
   getOrders = async (req, res) => {
     try {
       const userId = req.user.user_id;
@@ -257,7 +243,6 @@ class UserController {
     }
   };
 
-  // POST /orders/:id/reorder - Add items from a past order to cart
   reorder = async (req, res) => {
     try {
       const userId = req.user.user_id;
@@ -274,7 +259,6 @@ class UserController {
     }
   };
 
-  // POST /orders - Place a new order
   placeOrder = catchAsync(async (req, res) => {
     const userId = req.user.user_id;
     const orderData = req.body;
@@ -289,7 +273,6 @@ class UserController {
     });
   });
 
-  // GET /orders/:id - Get single order details
   getOrderDetails = catchAsync(async (req, res) => {
     const userId = req.user.user_id;
     const { id } = req.params;

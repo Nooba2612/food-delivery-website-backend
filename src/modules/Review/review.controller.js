@@ -1,7 +1,6 @@
 const reviewService = require("./review.service");
 
 const reviewController = {
-  // GET /api/dish/:dishId/reviews - Get all reviews for a dish
   getReviewsByDish: async (req, res, next) => {
     try {
       const { dishId } = req.params;
@@ -17,7 +16,6 @@ const reviewController = {
     }
   },
 
-  // POST /api/dish/:dishId/reviews - Create a new review
   createReview: async (req, res, next) => {
     try {
       const { dishId } = req.params;
@@ -42,7 +40,6 @@ const reviewController = {
     }
   },
 
-  // PUT /api/reviews/:reviewId - Update a review
   updateReview: async (req, res, next) => {
     try {
       const { reviewId } = req.params;
@@ -67,7 +64,6 @@ const reviewController = {
     }
   },
 
-  // DELETE /api/reviews/:reviewId - Delete a review
   deleteReview: async (req, res, next) => {
     try {
       const { reviewId } = req.params;
@@ -85,7 +81,6 @@ const reviewController = {
     }
   },
 
-  // GET /api/user/reviews - Get all reviews by current user
   getUserReviews: async (req, res, next) => {
     try {
       const userId = req.user.user_id;

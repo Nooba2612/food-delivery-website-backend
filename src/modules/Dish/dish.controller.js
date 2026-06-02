@@ -128,7 +128,6 @@ class dishController {
     try {
       const { id } = req.params;
 
-      // 1. Lấy dish hiện tại
       const currentDish = await dishModel.findOne({
         where: { dish_id: id },
       });
@@ -139,7 +138,6 @@ class dishController {
         });
       }
 
-      // 2. Lấy các dish cùng category (trừ chính nó)
       const similarDishes = await dishModel.findAll({
         where: {
           category_id: currentDish.category_id,
@@ -158,7 +156,6 @@ class dishController {
       });
     }
   }
-  // POST /api/dish  –  Tạo món ăn mới
   async createDish(req, res) {
     try {
       const {
@@ -184,7 +181,6 @@ class dishController {
 
       let thumbnail_path = req.body.thumbnail_path || null;
 
-      // Nếu có file ảnh được upload → upload lên S3
       if (req.file) {
         try {
           thumbnail_path = await uploadToS3(req.file, "dishes");
@@ -242,7 +238,6 @@ class dishController {
     }
   }
 
-  // PUT /api/dish/:id  –  Cập nhật món ăn
   async updateDish(req, res) {
     try {
       const { id } = req.params;
@@ -271,7 +266,6 @@ class dishController {
 
       let newThumbnail = dish.thumbnail_path;
 
-      // Nếu có file ảnh mới → upload lên S3
       if (req.file) {
         try {
           newThumbnail = await uploadToS3(req.file, "dishes");
@@ -325,7 +319,6 @@ class dishController {
     }
   }
 
-  // DELETE /api/dish/:id  –  Xóa món ăn
   async deleteDish(req, res) {
     try {
       const { id } = req.params;
