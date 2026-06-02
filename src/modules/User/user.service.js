@@ -3,14 +3,34 @@ const bcrypt = require("bcryptjs");
 const authUserService = require("@modules/Auth/user.service");
 const addressModel = require("./models/addressModel");
 
+/**
+ * Retrieves a user by their phone number and country code.
+ * Proxies the request to the central Auth User Service.
+ * @param {string} countryCode - The country code.
+ * @param {string} phoneNumber - The user's phone number.
+ * @returns {Promise<Object|null>} A Promise resolving to the user object, or null.
+ */
 const getUserByPhoneNumber = async (countryCode, phoneNumber) => {
   return authUserService.getUserByPhoneNumber(countryCode, phoneNumber);
 };
 
+/**
+ * Retrieves a user by their email address.
+ * Proxies the request to the central Auth User Service.
+ * @param {string} email - The user's email address.
+ * @returns {Promise<Object|null>} A Promise resolving to the user object, or null.
+ */
 const getUserByEmail = async (email) => {
   return authUserService.getUserByEmail(email);
 };
 
+/**
+ * Retrieves the full profile of a user, including their saved addresses.
+ * Excludes sensitive information like passwords.
+ * @param {string} userId - The unique identifier of the user.
+ * @returns {Promise<Object>} A Promise resolving to the complete user profile object.
+ * @throws {Error} If the user is not found.
+ */
 const getProfile = async (userId) => {
   try {
     const user = await authUserService.getUserById(userId);
@@ -37,10 +57,26 @@ const getProfile = async (userId) => {
   }
 };
 
+/**
+ * Retrieves a user by their unique ID.
+ * Proxies the request to the central Auth User Service.
+ * @param {string} userId - The unique identifier of the user.
+ * @returns {Promise<Object|null>} A Promise resolving to the user object, or null.
+ */
 const getUserById = async (userId) => {
   return authUserService.getUserById(userId);
 };
 
+/**
+ * Creates a new user in the system.
+ * Proxies the request to the central Auth User Service.
+ * @param {string} username - The chosen username.
+ * @param {string} type_login - The login type (e.g., local, google).
+ * @param {string} country_code - The country code.
+ * @param {string} phone_number - The user's phone number.
+ * @param {string} password - The user's password (hashed).
+ * @returns {Promise<Object>} A Promise resolving to the created user object.
+ */
 const createUser = async (
   username,
   type_login,
@@ -61,6 +97,14 @@ const createUser = async (
   }
 };
 
+/**
+ * Updates a user's profile information.
+ * Validates the input data to ensure security and data integrity.
+ * @param {string} userId - The unique identifier of the user.
+ * @param {Object} updateData - The fields to update (fullname, username, gender, dateOfBirth, avatarPath).
+ * @returns {Promise<Object>} A Promise resolving to the updated user profile.
+ * @throws {Error} If validation fails or the user is not found.
+ */
 const updateProfile = async (userId, updateData) => {
   try {
     const user = await authUserService.getUserById(userId);
@@ -119,6 +163,15 @@ const updateProfile = async (userId, updateData) => {
   }
 };
 
+/**
+ * Changes a user's password.
+ * Verifies the old password before updating to the new one.
+ * @param {string} userId - The unique identifier of the user.
+ * @param {string} oldPassword - The user's current password.
+ * @param {string} newPassword - The user's new password.
+ * @returns {Promise<Object>} A Promise resolving to a success message.
+ * @throws {Error} If the old password is incorrect or the user is not found.
+ */
 const changePassword = async (userId, oldPassword, newPassword) => {
   try {
     const user = await authUserService.getUserById(userId);
@@ -143,6 +196,11 @@ const changePassword = async (userId, oldPassword, newPassword) => {
   }
 };
 
+/**
+ * Searches for users based on a general query string.
+ * @param {string} query - The search query (email, phone, etc.).
+ * @returns {Promise<Array>} A Promise resolving to an array of matching users.
+ */
 const findUser = async (query) => {
   return authUserService.findUser(query);
 };
