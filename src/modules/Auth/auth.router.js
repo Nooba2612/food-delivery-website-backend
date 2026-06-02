@@ -93,6 +93,14 @@ router.get(
  */
 router.get(
   "/google/redirect",
+  (req, res, next) => {
+    // If this callback URL is opened directly without Google's `code`,
+    // restart the OAuth flow instead of surfacing a raw "missing scope" error.
+    if (!req.query.code && !req.query.error) {
+      return res.redirect("/api/auth/google");
+    }
+    next();
+  },
   passport.authenticate("google", {
     successRedirect: `${process.env.CLIENT_URL}/login/status`,
     failureRedirect: `${process.env.CLIENT_URL}/login/status`,
@@ -148,6 +156,12 @@ router.get(
  */
 router.get(
   "/facebook/redirect",
+  (req, res, next) => {
+    if (!req.query.code && !req.query.error) {
+      return res.redirect("/api/auth/facebook");
+    }
+    next();
+  },
   passport.authenticate("facebook", {
     successRedirect: `${process.env.CLIENT_URL}/login/status`,
     failureRedirect: `${process.env.CLIENT_URL}/login/status`,

@@ -59,12 +59,82 @@ Kỳ vọng:
 
 ## Lệnh Hay Dùng
 
+Khởi động toàn bộ stack:
+
+```bash
+docker compose up -d --build
+```
+
+Khởi động lại riêng `backend` sau khi sửa code hoặc `.env`:
+
+```bash
+docker compose up -d --build backend
+```
+
+Dừng toàn bộ stack:
+
+```bash
+docker compose down
+```
+
+Xem container nào đang chạy:
+
+```bash
+docker compose ps
+```
+
+Xem log realtime của `backend`:
+
+```bash
+docker logs -f eatsy_backend
+```
+
+Xem log realtime của `kong`:
+
+```bash
+docker logs -f eatsy_kong
+```
+
+Kiểm tra nhanh backend sống chưa:
+
+```bash
+curl http://localhost:5678/status
+```
+
+Kiểm tra nhanh qua Kong:
+
+```bash
+curl http://localhost:8000/status
+```
+
+Reload lại Kong sau khi sửa `kong.yaml`:
+
+```bash
+docker compose up -d --force-recreate kong
+```
+
+Vào shell trong container `backend`:
+
+```bash
+docker exec -it eatsy_backend sh
+```
+
+Vào MySQL trong container:
+
+```bash
+docker exec -it eatsy_mysql mysql -uroot -prootpassword
+```
+
+Seed lại dữ liệu MySQL thủ công:
+
+```bash
+npm run seed:mysql
+```
+
+Reindex dữ liệu Qdrant:
+
 ```bash
 npm run reindex:qdrant:dishes
-docker compose up -d --build
-docker compose up -d --build backend
-docker logs -f eatsy_backend
-docker run -d --name redis-stack -p 6379:6379 redis/redis-stack-server:latest
 ```
 
 ## Demo Chịu Tải Server
