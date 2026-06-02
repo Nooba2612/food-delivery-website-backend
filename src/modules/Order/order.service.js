@@ -23,15 +23,31 @@ const ORDER_DISH_ATTRIBUTES = [
   "preparation_time",
 ];
 
+/**
+ * Normalizes an order item object by extracting plain data if it's a Sequelize model instance.
+ * @param {Object} item - The order item to normalize.
+ * @returns {Object} The normalized, plain JS object.
+ */
 const normalizeOrderItem = (item) =>
   typeof item.get === "function" ? item.get({ plain: true }) : item;
 
+/**
+ * Creates a map of dishes for fast lookups by their IDs.
+ * @param {Array} items - Array of items containing dish_ids.
+ * @returns {Promise<Map>} A Promise resolving to a Map of dish_id -> dish object.
+ */
 const createDishMap = async (items) => {
   const dishIds = items.map((item) => item.dish_id).filter(Boolean);
   const dishes = await dishService.getDishesPlainByIds(dishIds, ORDER_DISH_ATTRIBUTES);
   return new Map(dishes.map((dish) => [dish.dish_id, dish]));
 };
 
+/**
+ * Formats a raw order object into a standardized structure for frontend consumption.
+ * @param {Object} plainOrder - The plain JS order object from the database.
+ * @param {Map} dishMap - A map of dishes for enriching order items.
+ * @returns {Object} The formatted order object.
+ */
 const formatOrder = (plainOrder, dishMap) => ({
   order_id: plainOrder.order_id,
   date: plainOrder.order_date,
@@ -62,9 +78,20 @@ const formatOrder = (plainOrder, dishMap) => ({
   }),
 });
 
+/**
+ * Builds a string representation of an address from its components.
+ * @param {Object} address - The address object containing street, ward, and city.
+ * @returns {string} The formatted address string.
+ */
 const buildAddressSnapshot = (address) =>
   [address.street, address.ward, address.city].filter(Boolean).join(", ");
 
+/**
+ * Validates if a dish is available and has enough stock for checkout.
+ * @param {Object} dish - The dish object to check.
+ * @param {number} quantity - The requested quantity.
+ * @throws {AppError} If the dish is unavailable or lacks stock.
+ */
 const validateDishForCheckout = (dish, quantity) => {
   if (!dish || dish.status !== "active" || !dish.available) {
     throw new AppError(
@@ -79,6 +106,11 @@ const validateDishForCheckout = (dish, quantity) => {
 };
 
 const OrderService = {
+  /**
+   * Retrieves all orders for a specific user.
+   * @param {string} userId - The unique identifier of the user.
+   * @returns {Promise<Array>} A Promise resolving to an array of formatted orders.
+   */
   getUserOrders: async (userId) => {
     const orders = await orderModel.findAll({
       where: { user_id: userId },
@@ -98,6 +130,12 @@ const OrderService = {
     return plainOrders.map((plainOrder) => formatOrder(plainOrder, dishMap));
   },
 
+  /**
+   * Creates a new order from the user's current cart items.
+   * @param {string} userId - The unique identifier of the user placing the order.
+   * @param {Object} orderData - The order details including address, payment method, etc.
+   * @returns {Promise<Object>} A Promise resolving to the created order summary.
+   */
   createOrderFromCart: async (userId, orderData) => {
     const transaction = await sequelize.transaction();
 
@@ -283,6 +321,12 @@ const OrderService = {
     }
   },
 
+  /**
+   * Fetches the details of a specific order by its ID.
+   * @param {string} userId - The unique identifier of the user requesting the order.
+   * @param {string} orderId - The unique identifier of the order.
+   * @returns {Promise<Object>} A Promise resolving to the detailed order object.
+   */
   getOrderById: async (userId, orderId) => {
     const order = await orderModel.findOne({
       where: { order_id: orderId },
@@ -322,6 +366,12 @@ const OrderService = {
     };
   },
 
+  /**
+   * Updates the status of an existing order.
+   * @param {string} orderId - The unique identifier of the order to update.
+   * @param {string} status - The new status to apply.
+   * @returns {Promise<Object>} A Promise resolving to the updated order object.
+   */
   updateOrderStatus: async (orderId, status) => {
     const order = await orderModel.findOne({ where: { order_id: orderId } });
     if (!order) {
@@ -343,6 +393,10 @@ const OrderService = {
     return order;
   },
 
+  /**
+   * Retrieves high-level statistics for all orders in the system.
+   * @returns {Promise<Object>} A Promise resolving to an object containing total and status-specific counts.
+   */
   getOrderStats: async () => {
     const [total, pending, confirmed, delivering, delivered, cancelled] =
       await Promise.all([
@@ -357,6 +411,11 @@ const OrderService = {
     return { total, pending, confirmed, delivering, delivered, cancelled };
   },
 
+  /**
+   * Fetches paginated orders for administrative viewing.
+   * @param {Object} params - The query parameters including search, status, page, and limit.
+   * @returns {Promise<Object>} A Promise resolving to the paginated list of orders and metadata.
+   */
   getOrdersForAdmin: async ({ search = "", status = "", page = 1, limit = 10 }) => {
     const where = {};
 
@@ -418,6 +477,11 @@ const OrderService = {
     };
   },
 
+  /**
+   * Retrieves a high-level summary of a specific order.
+   * @param {string} orderId - The unique identifier of the order.
+   * @returns {Promise<Object>} A Promise resolving to the order summary.
+   */
   getOrderSummary: async (orderId) => {
     const order = await orderModel.findOne({
       where: { order_id: orderId },
@@ -457,6 +521,12 @@ const OrderService = {
     };
   },
 
+  /**
+   * Reorders items from a previous order by adding them to the user's cart.
+   * @param {string} userId - The unique identifier of the user.
+   * @param {string} orderId - The unique identifier of the previous order.
+   * @returns {Promise<Object>} A Promise resolving to a summary of added and skipped items.
+   */
   reorder: async (userId, orderId) => {
     const order = await orderModel.findOne({
       where: { order_id: orderId, user_id: userId },
