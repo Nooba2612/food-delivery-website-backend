@@ -150,6 +150,139 @@ const createGroupConversation = async (req, res) => {
   }
 };
 
+// Create order support group conversation
+const createOrderSupportGroup = async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+    let { orderId, participantIds } = req.body;
+
+    if (typeof participantIds === "string") {
+      try {
+        participantIds = JSON.parse(participantIds);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid participantIds format.",
+        });
+      }
+    }
+
+    if (!orderId || !participantIds || !Array.isArray(participantIds)) {
+      return res.status(400).json({
+        success: false,
+        message: "orderId and participantIds are required",
+      });
+    }
+
+    const name = `[Hỗ trợ] Đơn hàng #${orderId}`;
+    
+    // Auto-add the creator (Admin/System) if not in list
+    if (!participantIds.includes(userId)) {
+      participantIds.push(userId);
+    }
+
+    // Call service to create group (we'll update ChatService to handle custom fields or do it via ConversationModel directly)
+    const conversation = await ChatService.createGroupConversation(
+      userId,
+      name,
+      participantIds,
+      null
+    );
+
+    // Update the conversation with order-specific metadata
+    const ConversationModel = require("./models/conversationModel");
+    await ConversationModel.update(conversation.conversationId || conversation.id, {
+      referenceOrderId: orderId,
+      ticketStatus: "open" // open, in_progress, resolved
+    });
+    
+    conversation.referenceOrderId = orderId;
+    conversation.ticketStatus = "open";
+
+    // Emit WebSocket event to all participants
+    const io = req.app.get("io");
+    if (io) {
+      websocket.emitNewConversation(io, participantIds, conversation);
+    }
+
+    res.status(201).json({
+      success: true,
+      data: conversation,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Update ticket status
+const updateTicketStatus = async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+    const { conversationId } = req.params;
+    const { ticketStatus } = req.body;
+    const io = req.app.get("io");
+
+    if (!["open", "in_progress", "resolved"].includes(ticketStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid ticketStatus. Must be open, in_progress, or resolved",
+      });
+    }
+
+    const ConversationModel = require("./models/conversationModel");
+    const conversation = await ConversationModel.findById(conversationId);
+    
+    if (!conversation || !conversation.referenceOrderId) {
+      return res.status(404).json({
+        success: false,
+        message: "Order Support Conversation not found",
+      });
+    }
+
+    // Update status
+    await ConversationModel.update(conversationId, {
+      ticketStatus
+    });
+
+    // Send a system message about the status change
+    const statusText = ticketStatus === 'open' ? 'Mở ticket 🟢' : ticketStatus === 'in_progress' ? 'Đang xử lý 🟠' : 'Đã giải quyết ⚫';
+    const message = await ChatService.sendMessage(userId, conversationId, {
+      content: `System: Trạng thái hỗ trợ đã được đổi thành "${statusText}"`,
+      type: "system",
+    });
+
+    // Notify users
+    if (io) {
+      const { emitConversationUpdated, emitMessageToConversation } = require("@core/websocket");
+      const ConversationParticipantModel = require("./models/conversationParticipantModel");
+      
+      emitMessageToConversation(io, conversationId, message);
+
+      const members = await ConversationParticipantModel.findMembersOfConversation(conversationId);
+      const memberIds = members.map(m => m.user_id);
+      
+      emitConversationUpdated(io, conversationId, memberIds, {
+        ticketStatus,
+        lastMessageTimestamp: new Date().toISOString()
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Ticket status updated successfully",
+      data: { ticketStatus }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // Get conversation details
 const getConversationDetails = async (req, res) => {
   try {
@@ -1096,4 +1229,6 @@ module.exports = {
   disbandGroup,
   updateMemberRole,
   forwardMessage,
+  createOrderSupportGroup,
+  updateTicketStatus,
 };

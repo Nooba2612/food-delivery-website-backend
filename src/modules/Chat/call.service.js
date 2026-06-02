@@ -183,15 +183,13 @@ class CallService {
    */
   static async rejectCall(callId, reason = "user_declined") {
     try {
-      // Update call status
       const call = await CallModel.update(callId, {
         status: "rejected",
       });
 
-      // Clean up active call
       const activeCall = await ActiveCallModel.findByCallId(callId);
       if (activeCall) {
-        await ActiveCallModel.delete(activeCall.id);
+        await ActiveCallModel.delete(activeCall.active_call_id || activeCall.id);
       }
 
       return call;
@@ -213,7 +211,7 @@ class CallService {
       // Clean up active call (if any)
       const activeCall = await ActiveCallModel.findByCallId(callId);
       if (activeCall) {
-        await ActiveCallModel.delete(activeCall.id);
+        await ActiveCallModel.delete(activeCall.active_call_id || activeCall.id);
       }
 
       return call;
@@ -233,7 +231,7 @@ class CallService {
       // Remove active call record
       const activeCall = await ActiveCallModel.findByCallId(callId);
       if (activeCall) {
-        await ActiveCallModel.delete(activeCall.id);
+        await ActiveCallModel.delete(activeCall.active_call_id || activeCall.id);
       }
 
       return call;
