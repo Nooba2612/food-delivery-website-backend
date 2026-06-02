@@ -36,7 +36,10 @@ const upload = require("@core/middlewares/upload");
  *       500:
  *         description: Server error during upload
  */
-router.post("/", upload.single("image"), (req, res) => {
+router.post("/", upload.single("file"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: "No file uploaded or invalid file format" });
+  }
   res.json({
     url: req.file.path,
   });

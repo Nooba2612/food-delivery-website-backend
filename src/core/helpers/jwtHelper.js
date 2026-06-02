@@ -23,11 +23,11 @@ const generateJWT = (user, expiresIn) => {
 };
 
 const generateTokens = (user, customAccessExpires, customRefreshExpires) => {
-    const accessSecret = process.env.JWT_SECRET_KEY;
-    const refreshSecret = process.env.JWT_SECRET_KEY;
+    const accessSecret = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY;
+    const refreshSecret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET_KEY;
 
-    const accessExpires = customAccessExpires || process.env.JWT_EXPIRES_IN;
-    const refreshExpires = customRefreshExpires || process.env.JWT_REFRESH_EXPIRES_IN;
+    const accessExpires = customAccessExpires || process.env.JWT_EXPIRES_IN || '1h';
+    const refreshExpires = customRefreshExpires || process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 
     const payload = getPayload(user);
 

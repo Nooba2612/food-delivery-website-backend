@@ -6,16 +6,17 @@ const TABLE_NAME = "calls";
 class CallModel {
   static async create(callData) {
     const call_id = uuidv4();
-    const now = new Date().toISOString();
+    const nowISO = new Date().toISOString();
+    const nowNum = Date.now();
 
     const params = {
       TableName: TABLE_NAME,
       Item: {
         call_id,
         ...callData,
-        status: "ringing", // ringing, accepted, rejected, ended, missed
-        created_at: now,
-        updated_at: now,
+        status: "ringing", 
+        created_at: nowNum,
+        updated_at: nowISO,
       },
     };
 
