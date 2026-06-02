@@ -15,8 +15,11 @@ const {
   recordUserTurn,
 } = require("./memoryEngine");
 
+const CHAT_API_KEY =
+  process.env.FREELLMAPI_API_KEY || process.env.GEMINI_API_KEY;
+
 const openai = new OpenAI({
-  apiKey: process.env.FREELLMAPI_API_KEY,
+  apiKey: CHAT_API_KEY,
   baseURL: process.env.FREELLMAPI_BASE_URL || "http://localhost:3001/v1",
 });
 
@@ -437,10 +440,10 @@ const chat = async (req, res) => {
       });
     }
 
-    if (!process.env.FREELLMAPI_API_KEY) {
+    if (!CHAT_API_KEY) {
       return res.status(500).json({
         success: false,
-        message: "Thiếu cấu hình FREELLMAPI_API_KEY.",
+        message: "Thiếu cấu hình FREELLMAPI_API_KEY hoặc GEMINI_API_KEY.",
       });
     }
 
