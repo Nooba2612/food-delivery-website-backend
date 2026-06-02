@@ -14,6 +14,7 @@ const {
   socketEventBus,
 } = require("@core/websocket");
 const { getUserById } = require("@modules/User/user.service");
+const UserModel = require("@modules/Auth/models/userModel");
 
 let registered = false;
 
@@ -35,6 +36,25 @@ const resolvePeerFromCall = async (callId, currentUserId) => {
 const registerChatSocketListeners = () => {
   if (registered) return;
   registered = true;
+
+  socketEventBus.on("socket.connected", async ({ io, userId }) => {
+    try {
+      await UserModel.update({ isOnline: true }, { where: { user_id: userId } });
+      io.emit("user_status_changed", { userId, isOnline: true });
+    } catch (error) {
+      console.error("[Socket] Failed to update online status for user:", userId, error);
+    }
+  });
+
+  socketEventBus.on("socket.disconnected", async ({ io, userId }) => {
+    try {
+      const lastActive = new Date();
+      await UserModel.update({ isOnline: false, last_login: lastActive }, { where: { user_id: userId } });
+      io.emit("user_status_changed", { userId, isOnline: false, lastActive: lastActive.toISOString() });
+    } catch (error) {
+      console.error("[Socket] Failed to update offline status for user:", userId, error);
+    }
+  });
 
   socketEventBus.on("socket.call_user", async ({ io, userId, data, socket }) => {
     const initiator = await getUserById(userId);

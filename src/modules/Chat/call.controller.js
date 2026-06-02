@@ -146,6 +146,7 @@ const acceptCall = async (req, res) => {
         recipientSocketId: req.user?.socket_id || "",
         recipientName: req.user?.full_name || req.user?.username || "Unknown",
         recipientAvatar: req.user?.avatar || null,
+        callType: call.call_type,
         timestamp: new Date().toISOString(),
       });
     }
