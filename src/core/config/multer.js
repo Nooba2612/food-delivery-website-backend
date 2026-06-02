@@ -154,5 +154,6 @@ module.exports = {
     profileUpload,
     uploadToS3,
     s3,
+    s3Storage,
 };
 

@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const AdminController = require("./admin.controller");
+const adminAIChatController = require("./adminAIChat.controller");
+const { authAdminMiddleware } = require("@core/middlewares/authMiddleware");
 
 // Order management
 router.get("/orders/stats", AdminController.getOrderStats);
@@ -23,5 +25,8 @@ router.delete("/products/:id", AdminController.deleteProduct);
 
 // Categories
 router.get("/categories", AdminController.getCategories);
+
+// AI Chatbot chuyên dụng cho Admin (giới hạn chủ đề Eatsy)
+router.post("/ai-chat", authAdminMiddleware, adminAIChatController.chat);
 
 module.exports = router;

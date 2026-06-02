@@ -1,4 +1,8 @@
 const errorHandler = (err, req, res, next) => {
+    console.error("🔥 ORIGINAL ERROR IN ERROR HANDLER:", err);
+    if (typeof err === "string") {
+        err = new Error(err);
+    }
     err.statusCode = err.statusCode || 500;
     err.status = err.status || "error";
 
