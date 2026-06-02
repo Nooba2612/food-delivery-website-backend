@@ -17,6 +17,7 @@ const reviewRouter = require('@modules/Review/review.router');
 const adminRouter = require('@modules/Admin/admin.router');
 const uploadRouter = require('@modules/Media/upload.router');
 const paymentRouter = require('./paymentRouter');
+const paymentController = require('../controllers/paymentController');
 const path = require('path');
 const {
     authAdminMiddleware,
@@ -50,6 +51,7 @@ const routes = (app) => {
     // ── Order Module ──────────────────────────────────────────
     app.use('/api/orders', authMiddleware, orderRouter);
     app.use('/api/vnpay', vnPayRouter);
+    app.post('/api/sepay/webhook', paymentController.sepayWebhook);
     app.use('/api/payments', authMiddleware, paymentRouter);
 
     // ── Chat Module ───────────────────────────────────────────

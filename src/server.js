@@ -1,51 +1,70 @@
-require("dotenv").config();
-const express = require("express");
-const swaggerUi = require("swagger-ui-express");
-const swaggerSpecs = require("@core/config/swagger");
+require('dotenv').config();
+const express = require('express');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpecs = require('@core/config/swagger');
 
-require("./models");
+require('./models');
 
-const routes = require("./routes");
-const useMiddlewares = require("@core/middlewares/index");
+const routes = require('./routes');
+const useMiddlewares = require('@core/middlewares/index');
+const { connectToDatabase, sequelize } = require('@core/config/sequelize');
 const {
-  connectToDatabase,
-  sequelize,
-} = require("@core/config/sequelize");
-const { registerChatSocketListeners } = require("@modules/Chat/socket.listeners");
+    registerChatSocketListeners,
+} = require('@modules/Chat/socket.listeners');
+const paymentService = require('@modules/User/paymentService');
 
 const app = express();
-app.set("trust proxy", 1);
-
-app.use(express.json());
-
-useMiddlewares(app);
+app.set('trust proxy', 1);
 
 app.use(
-  "/api-docs",
-  swaggerUi.serve,
-  swaggerUi.setup(swaggerSpecs, {
-    swaggerOptions: {
-      persistAuthorization: true,
-    },
-  }),
+    express.json({
+        verify: (req, res, buf) => {
+            if (req.originalUrl.startsWith('/api/sepay/webhook')) {
+                req.rawBody = buf;
+            }
+        },
+    }),
 );
 
+// using middlewares
+useMiddlewares(app);
+
+// Swagger UI
+app.use(
+    '/api-docs',
+    swaggerUi.serve,
+    swaggerUi.setup(swaggerSpecs, {
+        swaggerOptions: {
+            persistAuthorization: true,
+        },
+    }),
+);
+
+// routing
 routes(app);
 
-const errorHandler = require("@core/middlewares/errorHandler");
+// Global Error Handler
+const errorHandler = require('@core/middlewares/errorHandler');
 app.use(errorHandler);
 
-app.set("io", null);
+// Store io instance globally for services to access
+app.set('io', null);
 
 const appReady = (async () => {
-  await connectToDatabase();
-  await sequelize.sync();
-  registerChatSocketListeners();
+    await connectToDatabase();
+    await sequelize.sync();
+    registerChatSocketListeners();
 })();
 
-app.set("appReady", appReady);
+appReady.then(() => {
+    const intervalMs = 60 * 1000;
+    setInterval(() => {
+        paymentService.expireStalePendingPayments().catch((error) => {
+            console.error('Pending payment cleanup failed:', error);
+        });
+    }, intervalMs);
+});
 
-// Start BullMQ workers
-require("./workers/order.worker");
+app.set('appReady', appReady);
 
 module.exports = app;

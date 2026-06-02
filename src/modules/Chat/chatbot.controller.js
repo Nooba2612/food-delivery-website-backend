@@ -7,7 +7,6 @@ const categoryService = require("@modules/Dish/category.service");
 const {
   isSemanticSearchEnabled,
   searchDishIdsBySemanticQuery,
-  deriveDishMetadata,
 } = require("@modules/Dish/semanticSearch.service");
 const {
   buildMemorySummary,
@@ -15,25 +14,15 @@ const {
   recordAssistantTurn,
   recordUserTurn,
 } = require("./memoryEngine");
-const { createChatQueryResolver } = require("./chatQueryResolver");
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const openai = new OpenAI({
-  apiKey: process.env.FREELLMAPI_API_KEY || GEMINI_API_KEY || "dummy-key",
-  baseURL:
-    process.env.FREELLMAPI_BASE_URL ||
-    "https://generativelanguage.googleapis.com/v1beta/openai",
+  apiKey: process.env.FREELLMAPI_API_KEY,
+  baseURL: process.env.FREELLMAPI_BASE_URL || "http://localhost:3001/v1",
 });
 
 const CHAT_MODEL =
-  process.env.FREELLMAPI_MODEL || "gemini-2.5-flash";
+  process.env.FREELLMAPI_MODEL || "google/gemini-2.5-flash-lite";
 const BACKEND_URL = process.env.BASE_URL || "http://localhost:5678";
-const CHAT_DEBUG_TRACE = String(process.env.CHAT_DEBUG_TRACE || "").toLowerCase() === "true";
-const CHAT_COMPLETION_TIMEOUT_MS = Number(
-  process.env.FREELLMAPI_TIMEOUT_MS || 60000,
-);
-const CHAT_MAX_TOKENS = Number(process.env.FREELLMAPI_MAX_TOKENS || 1000);
-const CHAT_RETRIES = Number(process.env.FREELLMAPI_RETRIES || 2);
 const TOP_K_RESULTS = 6;
 const CANDIDATE_POOL_SIZE = 12;
 const SLIDING_WINDOW_SIZE = 5;
@@ -41,274 +30,6 @@ const SEMANTIC_WEIGHT = 0.55;
 const KEYWORD_WEIGHT = 0.3;
 const POPULARITY_WEIGHT = 0.1;
 const QUALITY_WEIGHT = 0.05;
-
-function traceChatFlow(stage, payload = {}) {
-  if (!CHAT_DEBUG_TRACE) {
-    return;
-  }
-
-  try {
-    console.log(`[ChatTrace] ${stage}: ${JSON.stringify(payload, null, 2)}`);
-  } catch (_error) {
-    console.log(`[ChatTrace] ${stage}:`, payload);
-  }
-}
-
-function normalizeText(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-const CATEGORY_ENTITY_RULES = [
-  {
-    key: "drink",
-    labels: ["nuoc uong", "do uong", "nuoc ngot", "drink"],
-    categoryNames: ["Nước uống"],
-    singularLabel: "món đồ uống",
-    pluralLabel: "món đồ uống",
-  },
-  {
-    key: "combo",
-    labels: ["combo"],
-    categoryNames: ["Combos"],
-    singularLabel: "combo",
-    pluralLabel: "combo",
-  },
-  {
-    key: "pizza",
-    labels: ["pizza"],
-    categoryNames: ["Pizza"],
-    singularLabel: "pizza",
-    pluralLabel: "pizza",
-  },
-  {
-    key: "burger",
-    labels: ["burger", "whopper", "cheeseburger"],
-    categoryNames: ["Burgers"],
-    singularLabel: "burger",
-    pluralLabel: "burger",
-  },
-];
-
-function containsWholePhrase(text, phrase) {
-  const safePhrase = normalizeText(phrase).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|\\s)${safePhrase}(\\s|$)`, "i").test(normalizeText(text));
-}
-
-function findCategoryEntityRule(message) {
-  const normalizedMessage = normalizeText(message);
-  return (
-    CATEGORY_ENTITY_RULES.find((rule) =>
-      rule.labels.some((label) => containsWholePhrase(normalizedMessage, label)),
-    ) || null
-  );
-}
-
-function buildDishSearchText(dish) {
-  const plainDish = dish?.get ? dish.get({ plain: true }) : dish;
-  return normalizeText(
-    [
-      plainDish?.name,
-      plainDish?.description,
-      plainDish?.brand,
-      plainDish?.category?.name,
-      Array.isArray(plainDish?.tags) ? plainDish.tags.join(" ") : "",
-    ]
-      .filter(Boolean)
-      .join(" "),
-  );
-}
-
-function isBeefDish(dish) {
-  const metadata = deriveDishMetadata(dish);
-  if (metadata?.has_beef) {
-    return true;
-  }
-
-  const text = buildDishSearchText(dish);
-  return (
-    text.includes("thit bo") ||
-    text.includes("bo nuong") ||
-    text.includes("beef") ||
-    text.includes("whopper") ||
-    text.includes("cheeseburger")
-  );
-}
-
-function isChickenDish(dish) {
-  const metadata = deriveDishMetadata(dish);
-  if (metadata?.has_chicken) {
-    return true;
-  }
-
-  const text = buildDishSearchText(dish);
-  return (
-    text.includes("ga") ||
-    text.includes("chicken") ||
-    text.includes("chic") ||
-    text.includes("crispy chicken")
-  );
-}
-
-function findIngredientEntityRule(message) {
-  const normalizedMessage = normalizeText(message);
-
-  if (
-    containsWholePhrase(normalizedMessage, "thit bo") ||
-    containsWholePhrase(normalizedMessage, "bo") ||
-    containsWholePhrase(normalizedMessage, "beef")
-  ) {
-    return {
-      key: "beef",
-      labels: ["thit bo", "bo", "beef"],
-      displayLabel: "thịt bò",
-      matcher: isBeefDish,
-    };
-  }
-
-  if (
-    containsWholePhrase(normalizedMessage, "thit ga") ||
-    containsWholePhrase(normalizedMessage, "ga") ||
-    containsWholePhrase(normalizedMessage, "chicken")
-  ) {
-    return {
-      key: "chicken",
-      labels: ["thit ga", "ga", "chicken"],
-      displayLabel: "thịt gà",
-      matcher: isChickenDish,
-    };
-  }
-
-  return null;
-}
-
-function isCheapestIntent(message) {
-  const normalizedMessage = normalizeText(message);
-  return (
-    normalizedMessage.includes("re nhat") ||
-    normalizedMessage.includes("thap nhat") ||
-    normalizedMessage.includes("re tien nhat")
-  );
-}
-
-function isMostExpensiveIntent(message) {
-  const normalizedMessage = normalizeText(message);
-  return (
-    normalizedMessage.includes("dat nhat") ||
-    normalizedMessage.includes("mac nhat") ||
-    normalizedMessage.includes("cao nhat") ||
-    normalizedMessage.includes("mac tien nhat")
-  );
-}
-
-function isCountIntent(message) {
-  const normalizedMessage = normalizeText(message);
-  return (
-    normalizedMessage.includes("bao nhieu") ||
-    normalizedMessage.includes("co may") ||
-    normalizedMessage.includes("so luong") ||
-    normalizedMessage.includes("tong so") ||
-    normalizedMessage.includes("tong cong")
-  );
-}
-
-function isGeneralMenuCountIntent(message) {
-  const normalizedMessage = normalizeText(message);
-  return (
-    isCountIntent(message) &&
-    (normalizedMessage.includes("menu") ||
-      normalizedMessage.includes("quan") ||
-      normalizedMessage.includes("tat ca mon") ||
-      normalizedMessage.includes("mon an"))
-  );
-}
-
-function isPurchaseIntent(message) {
-  const normalizedMessage = normalizeText(message);
-  return (
-    normalizedMessage.includes("muon mua") ||
-    normalizedMessage.includes("mua") ||
-    normalizedMessage.includes("dat mon") ||
-    normalizedMessage.includes("them vao gio") ||
-    normalizedMessage.includes("chon mon") ||
-    normalizedMessage.includes("muon uong") ||
-    normalizedMessage.includes("muon an")
-  );
-}
-
-function isCategoryVerificationIntent(message) {
-  const normalizedMessage = normalizeText(message);
-  return (
-    normalizedMessage.includes("la burger") ||
-    normalizedMessage.includes("la pizza") ||
-    normalizedMessage.includes("la combo") ||
-    normalizedMessage.includes("thuoc danh muc")
-  );
-}
-
-function hasCheaperPreference(message) {
-  const normalizedMessage = normalizeText(message);
-  return (
-    normalizedMessage.includes("re hon") ||
-    normalizedMessage.includes("khong du tien") ||
-    normalizedMessage.includes("tiet kiem hon") ||
-    normalizedMessage.includes("thap hon")
-  );
-}
-
-function hasMoreExpensivePreference(message) {
-  const normalizedMessage = normalizeText(message);
-  return (
-    normalizedMessage.includes("dat hon") ||
-    normalizedMessage.includes("cao hon") ||
-    normalizedMessage.includes("mac hon")
-  );
-}
-
-function hasContextReference(message) {
-  const normalizedMessage = normalizeText(message);
-  return (
-    normalizedMessage.includes("mon do") ||
-    normalizedMessage.includes("cai do") ||
-    normalizedMessage.includes("mon nay") ||
-    normalizedMessage.includes("cai nay") ||
-    normalizedMessage.includes("mon kia") ||
-    normalizedMessage.includes("mon khac")
-  );
-}
-
-function isDrinkIntent(message) {
-  return Boolean(
-    findCategoryEntityRule(message)?.key === "drink" ||
-      containsWholePhrase(message, "nuoc") ||
-      containsWholePhrase(message, "do uong"),
-  );
-}
-
-function isComboIntent(message) {
-  return Boolean(findCategoryEntityRule(message)?.key === "combo");
-}
-
-function shouldAttachDishCards(message, dishes = []) {
-  if (!Array.isArray(dishes) || dishes.length === 0) {
-    return false;
-  }
-
-  return (
-    isPurchaseIntent(message) ||
-    hasContextReference(message) ||
-    isDrinkIntent(message) ||
-    isComboIntent(message) ||
-    isCheapestIntent(message) ||
-    isMostExpensiveIntent(message) ||
-    isCountIntent(message) ||
-    Boolean(findCategoryEntityRule(message)) ||
-    Boolean(findIngredientEntityRule(message))
-  );
-}
 
 async function attachCategoriesToDishes(dishes) {
   const plainDishes = dishes.map((dish) =>
@@ -349,10 +70,9 @@ function extractKeywords(text) {
   ].slice(0, 12);
 }
 
-async function retrieveRelevantDishes(retrievalQuery, options = {}) {
-  const semanticQuery = options.semanticQuery || retrievalQuery;
+async function retrieveRelevantDishes(retrievalQuery) {
   const [semanticResult, keywordResult] = await Promise.all([
-    retrieveSemanticDishes(semanticQuery),
+    retrieveSemanticDishes(retrievalQuery),
     retrieveKeywordDishes(retrievalQuery),
   ]);
 
@@ -467,22 +187,6 @@ async function retrieveKeywordDishes(message) {
   });
 
   return { dishes: await attachCategoriesToDishes(dishes), keywords };
-}
-
-async function getBeefDishes(limit = CANDIDATE_POOL_SIZE) {
-  const dishes = await dishService.findAllDishes({
-    where: {
-      status: "active",
-      available: true,
-    },
-    order: [["sold_count", "DESC"]],
-    limit: Math.max(limit * 3, limit),
-  });
-  const dishesWithCategory = await attachCategoriesToDishes(dishes);
-  return {
-    dishes: dishesWithCategory.filter(isBeefDish).slice(0, limit),
-    retrievalMode: "beef_verified",
-  };
 }
 
 function normalizeScore(value, min, max) {
@@ -705,70 +409,6 @@ function buildFallbackDishCards(dishes) {
   return dishes.slice(0, 3).map(buildDishCardPayload);
 }
 
-function extractDishCardsFromReply(reply) {
-  const matches = String(reply || "").match(/\[DISH_CARD:\s*(\{.*?\})\]/g) || [];
-
-  return matches
-    .map((match) => {
-      const jsonPayload = match.match(/\[DISH_CARD:\s*(\{.*?\})\]/)?.[1];
-      if (!jsonPayload) {
-        return null;
-      }
-
-      try {
-        const parsed = JSON.parse(jsonPayload);
-        return {
-          id: parsed.id || null,
-          name: parsed.name || "Món ăn",
-          price: Number(parsed.price || 0),
-          image: parsed.image || "",
-          rating: Number(parsed.rating || 0),
-        };
-      } catch (_error) {
-        return null;
-      }
-    })
-    .filter(Boolean);
-}
-
-function buildPurchaseReply(card) {
-  const normalizedCard = card || {};
-  const formattedPrice = Number(normalizedCard.price || 0).toLocaleString(
-    "vi-VN",
-  );
-  return `Bạn muốn mua ${normalizedCard.name || "món này"} phải không? Món này có giá ${formattedPrice}đ.`;
-}
-
-const chatQueryResolver = createChatQueryResolver({
-  normalizeText,
-  findCategoryEntityRule,
-  findIngredientEntityRule,
-  isCheapestIntent,
-  isMostExpensiveIntent,
-  isCountIntent,
-  isGeneralMenuCountIntent,
-  isPurchaseIntent,
-  isCategoryVerificationIntent,
-  hasCheaperPreference,
-  hasMoreExpensivePreference,
-  hasContextReference,
-  categoryService,
-  dishService,
-  attachCategoriesToDishes,
-  Op,
-  maxCandidatePoolSize: CANDIDATE_POOL_SIZE,
-  isDrinkIntent,
-  isComboIntent,
-  getBeefDishes,
-  buildDishCardPayload,
-  buildFallbackDishCards,
-  shouldAttachDishCards,
-  recordAssistantTurn,
-  isSemanticSearchEnabled,
-  retrieveRelevantDishes,
-  deriveDishMetadata,
-});
-
 function formatHistoryForOpenAI(chatHistory) {
   return chatHistory
     .filter((msg) => msg?.role && msg?.content)
@@ -797,169 +437,22 @@ const chat = async (req, res) => {
       });
     }
 
-    if (!process.env.FREELLMAPI_API_KEY && !GEMINI_API_KEY) {
+    if (!process.env.FREELLMAPI_API_KEY) {
       return res.status(500).json({
         success: false,
-        message: "Thiếu cấu hình GEMINI_API_KEY hoặc FREELLMAPI_API_KEY.",
+        message: "Thiếu cấu hình FREELLMAPI_API_KEY.",
       });
     }
 
     const userMessage = message.trim();
-    traceChatFlow("request_received", {
-      sessionId,
-      message: userMessage,
-      chatHistoryLength: chatHistory.length,
-      recentHistory: chatHistory.slice(-3).map((entry) => ({
-        role: entry?.role,
-        content: entry?.content,
-        dishes: Array.isArray(entry?.dishes)
-          ? entry.dishes.map((dish) => dish?.name || dish)
-          : [],
-      })),
-    });
-
     recordUserTurn(sessionId, userMessage);
     const memoryContext = buildRetrievalContext({
       sessionId,
       message: userMessage,
       chatHistory,
     });
-    traceChatFlow("memory_context_built", {
-      sessionId,
-      retrievalQuery: memoryContext.retrievalQuery,
-      semanticQuery: memoryContext.semanticQuery || userMessage,
-      rewrittenMessage: memoryContext.rewrittenMessage || userMessage,
-      referencedCard: memoryContext.referencedCard
-        ? memoryContext.referencedCard.name || memoryContext.referencedCard
-        : null,
-      memorySummary: memoryContext.memorySummary || "",
-    });
-
-    const purchaseTarget = await chatQueryResolver.resolvePurchaseTarget({
-      message: userMessage,
-      chatHistory,
-      memoryContext,
-    });
-    traceChatFlow("purchase_resolution", {
-      sessionId,
-      source: purchaseTarget?.source || null,
-      needsClarification: Boolean(purchaseTarget?.needsClarification),
-      selectedCard: purchaseTarget?.card?.name || null,
-      candidates: purchaseTarget?.debug?.candidateNames || [],
-    });
-
-    if (purchaseTarget?.needsClarification) {
-      recordAssistantTurn(
-        sessionId,
-        purchaseTarget.reply,
-        purchaseTarget.candidates || [],
-      );
-
-      traceChatFlow("response_ready", {
-        sessionId,
-        replyPreview: purchaseTarget.reply.slice(0, 240),
-        attachedCards: (purchaseTarget.candidates || []).map((card) => card?.name),
-        attachedCardCount: (purchaseTarget.candidates || []).length,
-      });
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          reply: purchaseTarget.reply,
-          cards: purchaseTarget.candidates || [],
-          meta: {
-            dishes_retrieved: (purchaseTarget.candidates || []).length,
-            history_window: 0,
-            model: null,
-            provider: "purchase_rule",
-            semantic_enabled: isSemanticSearchEnabled(),
-            retrieval_mode: purchaseTarget.retrievalMode || "purchase_rule",
-            retrieval_query: memoryContext.retrievalQuery,
-            memory_summary: buildMemorySummary(sessionId),
-            session_id: sessionId || null,
-          },
-        },
-      });
-    }
-
-    if (purchaseTarget?.card) {
-      const purchaseReply = buildPurchaseReply(purchaseTarget.card);
-      const purchaseCards = [purchaseTarget.card];
-      recordAssistantTurn(sessionId, purchaseReply, purchaseCards);
-
-      traceChatFlow("response_ready", {
-        sessionId,
-        replyPreview: purchaseReply,
-        attachedCards: purchaseCards.map((card) => card?.name),
-        attachedCardCount: purchaseCards.length,
-      });
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          reply: purchaseReply,
-          cards: purchaseCards,
-          meta: {
-            dishes_retrieved: purchaseCards.length,
-            history_window: 0,
-            model: null,
-            provider: "purchase_rule",
-            semantic_enabled: isSemanticSearchEnabled(),
-            retrieval_mode: purchaseTarget.retrievalMode || "purchase_rule",
-            retrieval_query: memoryContext.retrievalQuery,
-            memory_summary: buildMemorySummary(sessionId),
-            session_id: sessionId || null,
-          },
-        },
-      });
-    }
-
-    const entityResponse = await chatQueryResolver.buildEntityDrivenResponse(
-      userMessage,
-      sessionId,
-      chatHistory,
-    );
-    traceChatFlow("entity_response_evaluated", {
-      sessionId,
-      type: entityResponse?.type || null,
-      query: entityResponse?.query || null,
-      retrievalMode: entityResponse?.meta?.retrieval_mode || null,
-      resolvedDishNames:
-        entityResponse?.resolved?.dishes?.map((dish) => dish?.name) || [],
-      returnedCards: entityResponse?.cards?.map((card) => card?.name) || [],
-    });
-
-    if (
-      entityResponse &&
-      entityResponse.type !== "purchase" &&
-      entityResponse.type !== "category_check"
-    ) {
-      traceChatFlow("response_ready", {
-        sessionId,
-        replyPreview: String(entityResponse.reply || "").slice(0, 240),
-        attachedCards: (entityResponse.cards || []).map((card) => card?.name),
-        attachedCardCount: (entityResponse.cards || []).length,
-      });
-
-      return res.status(200).json({
-        success: true,
-        data: entityResponse,
-      });
-    }
-
     const { dishes: relevantDishes, retrievalMode } =
-      await retrieveRelevantDishes(memoryContext.retrievalQuery, {
-        semanticQuery: memoryContext.semanticQuery || userMessage,
-      });
-    traceChatFlow("retrieval_completed", {
-      sessionId,
-      retrievalMode,
-      retrievalQuery: memoryContext.retrievalQuery,
-      semanticQuery: memoryContext.semanticQuery || userMessage,
-      rewrittenMessage: memoryContext.rewrittenMessage || userMessage,
-      dishNames: relevantDishes.map((dish) => dish?.name),
-      dishCount: relevantDishes.length,
-    });
+      await retrieveRelevantDishes(memoryContext.retrievalQuery);
     const memorySummary = buildMemorySummary(sessionId);
     const systemInstruction = buildMemoryAwareSystemInstruction(
       relevantDishes,
@@ -972,7 +465,7 @@ const chat = async (req, res) => {
         openai.chat.completions.create({
           model: CHAT_MODEL,
           temperature: 0.7,
-          max_tokens: CHAT_MAX_TOKENS,
+          max_tokens: 800,
           messages: [
             { role: "system", content: systemInstruction },
             ...history,
@@ -980,9 +473,9 @@ const chat = async (req, res) => {
           ],
         }),
       {
-        retries: CHAT_RETRIES,
+        retries: 2,
         baseDelayMs: 1000,
-        timeoutMs: CHAT_COMPLETION_TIMEOUT_MS,
+        timeoutMs: 5000,
         operationName: "generate chatbot completion",
         shouldRetry: (error) => {
           const status = error?.status || error?.response?.status;
@@ -1008,36 +501,20 @@ const chat = async (req, res) => {
     );
 
     const aiReply = completion.choices?.[0]?.message?.content?.trim();
-    traceChatFlow("llm_completion_received", {
-      sessionId,
-      model: CHAT_MODEL,
-      provider: "gemini_openai_compat",
-      finishReason: completion?.choices?.[0]?.finish_reason || null,
-      usage: completion?.usage || null,
-      replyPreview: String(aiReply || "").slice(0, 240),
-    });
-    const parsedCards = extractDishCardsFromReply(aiReply);
-    const responseCards =
-      parsedCards.length > 0 ? parsedCards : buildFallbackDishCards(relevantDishes);
-    recordAssistantTurn(sessionId, aiReply || "", responseCards);
-    traceChatFlow("response_ready", {
-      sessionId,
-      replyPreview: String(aiReply || "").slice(0, 240),
-      attachedCards: responseCards.map((card) => card?.name),
-      attachedCardCount: responseCards.length,
-    });
+    const fallbackCards = buildFallbackDishCards(relevantDishes);
+    recordAssistantTurn(sessionId, aiReply || "", fallbackCards);
 
     return res.status(200).json({
       success: true,
       data: {
         reply:
           aiReply || "Mình chưa tạo được câu trả lời. Bạn thử hỏi lại nhé.",
-        cards: responseCards,
+        cards: fallbackCards,
         meta: {
           dishes_retrieved: relevantDishes.length,
           history_window: history.length,
           model: CHAT_MODEL,
-          provider: "gemini_openai_compat",
+          provider: "freellmapi",
           semantic_enabled: isSemanticSearchEnabled(),
           retrieval_mode: retrievalMode,
           retrieval_query: memoryContext.retrievalQuery,
@@ -1052,7 +529,7 @@ const chat = async (req, res) => {
     if (error.status === 401) {
       return res.status(500).json({
         success: false,
-        message: "Gemini API key không hợp lệ. Vui lòng kiểm tra cấu hình.",
+        message: "FreeLLMAPI key không hợp lệ. Vui lòng kiểm tra cấu hình.",
       });
     }
 
@@ -1060,14 +537,14 @@ const chat = async (req, res) => {
       return res.status(503).json({
         success: false,
         message:
-          "Gemini API đang chạm giới hạn quota hoặc rate limit. Vui lòng thử lại sau.",
+          "FreeLLMAPI đang chạm giới hạn quota hoặc rate limit. Vui lòng thử lại sau.",
       });
     }
 
     if (error.code === "ECONNREFUSED" || error.cause?.code === "ECONNREFUSED") {
       return res.status(503).json({
         success: false,
-        message: "Không thể kết nối tới Gemini OpenAI-compatible endpoint.",
+        message: "Không thể kết nối tới FreeLLMAPI server.",
       });
     }
 
