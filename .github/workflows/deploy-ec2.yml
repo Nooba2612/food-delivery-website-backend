@@ -1,0 +1,61 @@
+name: Deploy Backend To EC2
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Backend CI/CD
+    branches:
+      - master
+    types:
+      - completed
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    name: Deploy On AWS EC2
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Validate deployment configuration
+        run: |
+          test -n "${{ secrets.EC2_HOST }}" || (echo "Missing secret: EC2_HOST" && exit 1)
+          test -n "${{ secrets.EC2_USERNAME }}" || (echo "Missing secret: EC2_USERNAME" && exit 1)
+          test -n "${{ secrets.EC2_SSH_KEY }}" || (echo "Missing secret: EC2_SSH_KEY" && exit 1)
+          test -n "${{ secrets.DOCKERHUB_USERNAME }}" || (echo "Missing secret: DOCKERHUB_USERNAME" && exit 1)
+          test -n "${{ secrets.DOCKERHUB_TOKEN }}" || (echo "Missing secret: DOCKERHUB_TOKEN" && exit 1)
+          test -n "${{ vars.DOCKER_IMAGE_NAME }}" || (echo "Missing variable: DOCKER_IMAGE_NAME" && exit 1)
+          test -n "${{ vars.EC2_APP_DIR }}" || (echo "Missing variable: EC2_APP_DIR" && exit 1)
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -e
+            APP_DIR="${{ vars.EC2_APP_DIR }}"
+            if [ ! -d "$APP_DIR/.git" ]; then
+              echo "Missing git repo at $APP_DIR"
+              exit 1
+            fi
+
+            cd "$APP_DIR"
+            git fetch --all --prune
+            git checkout master
+            git reset --hard origin/master
+
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+            export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+            export DOCKER_IMAGE_NAME="${{ vars.DOCKER_IMAGE_NAME }}"
+
+            docker compose -f docker-compose.ec2.yml pull backend
+            docker compose -f docker-compose.ec2.yml up -d
+            docker image prune -f
