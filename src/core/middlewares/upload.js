@@ -6,7 +6,12 @@ const storage = new CloudinaryStorage({
   cloudinary,
   params: {
     folder: "food-app",
-    allowed_formats: ["jpg", "png", "jpeg"],
+    resource_type: (req, file) => {
+      if (!file || !file.mimetype) return "auto";
+      if (file.mimetype.startsWith("image/")) return "image";
+      if (file.mimetype.startsWith("video/") || file.mimetype.startsWith("audio/")) return "video";
+      return "raw";
+    },
   },
 });
 
