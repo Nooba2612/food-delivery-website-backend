@@ -28,7 +28,12 @@ const emitToConversation = (io, conversationId, eventName, payload) => {
 const initializeWebSocket = (server) => {
   const io = socketIO(server, {
     cors: {
-      origin: process.env.CLIENT_URL || "http://localhost:1234",
+      origin: [
+        process.env.CLIENT_URL || "http://localhost:5173",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:1234",
+      ],
       credentials: true,
     },
     transports: ["websocket", "polling"],
