@@ -74,6 +74,16 @@ const initializeWebSocket = (server) => {
       });
     });
 
+    socket.on("join_support", (conversationId) => {
+      socket.join(`support_conv_${conversationId}`);
+      console.log(`Socket ${socket.id} (user:${userId}) joined support room: support_conv_${conversationId}`);
+    });
+
+    socket.on("leave_support", (conversationId) => {
+      socket.leave(`support_conv_${conversationId}`);
+      console.log(`Socket ${socket.id} (user:${userId}) left support room: support_conv_${conversationId}`);
+    });
+
     socket.on("typing", (data) => {
       const roomName = `conversation_${data.conversationId}`;
       socket.to(roomName).emit("user_typing", {

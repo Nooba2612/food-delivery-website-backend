@@ -34,7 +34,6 @@ services:
 
   kong:
     image: kong/kong-gateway:3.14
-    pull_policy: never
     container_name: eatsy_kong
     restart: always
     depends_on:
