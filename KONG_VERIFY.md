@@ -1,75 +1,102 @@
-# Kong Verify Checklist
+# Checklist Kiểm Tra Kong
 
-## Quick start
+## Demo Rate Limiter
 
-1. Pull Kong image if Docker previously failed:
-   `docker pull kong/kong-gateway:3.14`
-2. Start the stack:
-   `docker compose up -d`
-3. Run the quick verification:
-   `npm run verify:kong:lite`
-4. Run the full verification when you also want to confirm rate limiting:
-   `npm run verify:kong`
-5. For Gemini embeddings after changing the embedding model, rebuild the vector data:
-   `npm run ingest:dishes`
+Chạy trước:
 
-## What the script checks
+`docker compose up -d --build`
 
-### `npm run verify:kong:lite`
+Sau đó chạy lệnh PowerShell sau để demo giới hạn request cho `/api/chat`:
 
-- `docker compose ps` shows `backend`, `kong`, `mysql_db`, and `redis`
-- Backend direct health endpoint: `http://localhost:5678/status`
-- Kong proxy health endpoint: `http://localhost:8000/status`
-- Kong Swagger proxy: `http://localhost:8000/api-docs`
-- Kong Admin API: `http://localhost:8001/services`
-- CORS preflight for `http://localhost:3000`
-- Socket.IO polling handshake through `http://localhost:8000/socket.io`
+```powershell
+1..15 | ForEach-Object {
+  try {
+    $resp = Invoke-WebRequest `
+      -Uri "http://localhost:8000/api/chat" `
+      -Method Post `
+      -ContentType "application/json" `
+      -Body '{"message":"hi","chatHistory":[],"sessionId":"demo-rate-limit-lite"}' `
+      -ErrorAction Stop
+    $code = [int]$resp.StatusCode
+  } catch {
+    $code = [int]$_.Exception.Response.StatusCode.value__
+  }
 
-### `npm run verify:kong`
+  Write-Host "$_ -> $code"
+  if ($code -eq 429) { break }
+}
+```
 
-- `docker compose ps` shows `backend`, `kong`, `mysql_db`, and `redis`
-- Backend direct health endpoint: `http://localhost:5678/status`
-- Kong proxy health endpoint: `http://localhost:8000/status`
-- Kong Swagger proxy: `http://localhost:8000/api-docs`
-- Kong Admin API: `http://localhost:8001/services`
-- CORS preflight for `http://localhost:3000`
-- Socket.IO polling handshake through `http://localhost:8000/socket.io`
-- Rate limiting returns `429` after repeated calls to `POST /api/orders`
-- Rate limiting returns `429` after repeated calls to `POST /api/chat` once the per-IP budget exceeds 30 requests per minute
+Kỳ vọng:
 
-## Manual checks after script passes
+- Nếu rate limit đang đặt là `10` request/phút/IP thì khoảng request `11` sẽ bắt đầu ra `429`
+- Điều đó chứng minh Kong đã chặn spam từ client trước khi request tiếp tục dồn vào backend
 
-1. Open `http://localhost:8000/api-docs` in the browser and confirm Swagger UI loads.
-2. Open the frontend and confirm normal API flows still work through `http://localhost:8000/api`.
-3. Test login with Google and Facebook after updating the callback URLs in each provider console:
-   `http://localhost:8000/api/auth/google/redirect`
-   `http://localhost:8000/api/auth/facebook/redirect`
-4. Open chat or call features and confirm realtime events work after page refresh.
-5. Trigger checkout or VNPay flow carefully and confirm the frontend shows the `429` toast when spamming requests.
-6. Open the chat UI and confirm each IP is throttled after around 30 AI questions in the same minute.
+## Demo Retry
 
-## Notes
+Lệnh PowerShell sau sẽ tạm dừng `backend`, gọi `GET /status` qua Kong, in ra mã lỗi và thời gian chờ, rồi bật `backend` lại:
 
-- Prefer `verify:kong:lite` while debugging config repeatedly.
-- The rate-limit check intentionally consumes the current minute budget for the configured test path.
-- The protected business prefixes in Kong are `/api/orders`, `/api/payments`, and `/api/vnpay`.
-- The AI chat route `/api/chat` is rate-limited to 30 requests per minute per IP.
-- Kong service retry is configured in `kong.yaml` with `retries: 2`, `connect_timeout: 3000`, `write_timeout: 5000`, and `read_timeout: 5000`.
-- Backend outbound calls also retry up to 2 more times with exponential backoff for network, timeout, or upstream `5xx` failures.
-- Current retry coverage in the backend includes email SMTP, AWS S3 upload, dish embedding generation, Qdrant semantic search, and chatbot completion generation.
-- After switching the embedding model away from `qwen3-embedding:0.6b`, old vectors in Qdrant are no longer dimension-compatible. Run `npm run ingest:dishes` to recreate the collection with the new embedding size.
-- If you rerun the script immediately, the rate-limit test may still be blocked until the minute window resets.
-- You can override script defaults manually:
-  `powershell -ExecutionPolicy Bypass -File ./scripts/verify-kong.ps1 -GatewayBaseUrl http://localhost:8000`
+```powershell
+docker stop eatsy_backend
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+try {
+  Invoke-WebRequest -Uri "http://localhost:8000/status" -Method Get -ErrorAction Stop | Out-Null
+  $code = 200
+} catch {
+  $code = [int]$_.Exception.Response.StatusCode.value__
+}
+$sw.Stop()
+Write-Host "HTTP $code"
+Write-Host ("Elapsed: {0:N2}s" -f $sw.Elapsed.TotalSeconds)
+docker start eatsy_backend
+```
 
-## How to explain fault tolerance
+Kỳ vọng:
 
-You can present the retry mechanism like this:
+- Kết quả thường là `HTTP 502`, `503`, hoặc `504`
+- Dòng `Elapsed` sẽ không phải `0.x` giây mà thường là vài giây
+- Điều đó cho thấy Kong không fail ngay, mà có retry khi upstream `backend` tạm thời lỗi hoặc không phản hồi
 
-- Kong is the first fault-tolerance layer. If the upstream backend connection is slow or temporarily unavailable, Kong retries the request up to 2 times with a 3-5 second timeout budget.
-- The backend is the second fault-tolerance layer. When it calls external services such as SMTP, S3, OpenAI, or Qdrant, it retries transient failures up to 2 times with exponential backoff `1s -> 2s`.
-- The backend only retries transient faults such as timeout, connection reset, refused connection, or upstream `5xx`. It does not retry normal business errors like validation failures or `4xx`.
+## Lệnh Hay Dùng
 
+```bash
 npm run reindex:qdrant:dishes
 docker compose up -d --build
+docker compose up -d --build backend
 docker logs -f eatsy_backend
+docker run -d --name redis-stack -p 6379:6379 redis/redis-stack-server:latest
+```
+
+## Demo Chịu Tải Server
+
+Chạy lệnh sau để bắn `1000` request vào endpoint `/status` qua Kong:
+
+```bash
+npx autocannon -c 100 -a 1000 http://localhost:8000/status
+```
+
+Kỳ vọng:
+
+- Hệ thống xử lý hết `1000` request
+- Không có lỗi request
+- Có thể nhìn nhanh vào `Avg Latency`, `Req/Sec`, và dòng tổng kết cuối
+
+Các chỉ số nên chỉ vào khi demo:
+
+- `1k requests in ...s`: tổng thời gian xử lý hết 1000 request
+- `Req/Sec`: số request xử lý mỗi giây
+- `Latency Avg`: độ trễ trung bình
+
+Ví dụ cách nói:
+
+- “Em dùng `autocannon` bắn 1000 request vào `/status` qua Kong với 100 kết nối đồng thời.”
+- “Nếu hệ thống xử lý hết request nhanh, không lỗi, và độ trễ trung bình vẫn ổn, thì chứng minh server chịu tải cơ bản tốt.”
+
+Bạn có thể phân biệt 3 mức demo:
+
+1000 request, 100 connection: hệ thống ổn
+10000 request, 500 connection: chưa lỗi nhưng latency tăng mạnh
+30000 request, 1500 connection: bắt đầu lỗi timeout thật
+Đây là câu nói ngắn gọn nhất:
+
+“Khi tải vừa phải, server xử lý ổn. Khi tăng lên 1500 kết nối đồng thời và 30.000 request, hệ thống bắt đầu xuất hiện timeout, nghĩa là đã chạm ngưỡng chịu tải.”

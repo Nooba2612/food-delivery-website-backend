@@ -26,9 +26,7 @@ const publicDir = path.join(process.cwd(), "src", "public");
 const useMiddlewares = (app) => {
   app.use(express.static(publicDir));
   app.use(morgan("dev"));
-  app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
-  app.use(bodyParser.json());
   app.use(bodyParser.urlencoded({ extended: false }));
   app.use(cookieParser());
   app.use(
@@ -60,6 +58,7 @@ const useMiddlewares = (app) => {
         "Authorization",
         "X-Requested-With",
         "Accept",
+        "Cache-Control",
       ],
     }),
   );

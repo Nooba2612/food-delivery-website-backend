@@ -6,6 +6,7 @@ const {
     completeIdempotencyKey,
     releaseIdempotencyKey,
 } = require('@core/utils/idempotencyStore');
+const { verifySePayWebhook, getSePayConfig } = require('@core/utils/sepay');
 
 class paymentController {
     /**
@@ -103,6 +104,33 @@ class paymentController {
     });
 
     /**
+     * GET /api/payments/:id/status
+     * Check payment status for current user
+     */
+    getPaymentStatus = catchAsync(async (req, res) => {
+        const paymentId = req.params.id;
+        const userId = req.user?.user_id;
+
+        if (!userId) {
+            throw new AppError('Bạn cần đăng nhập để kiểm tra thanh toán', 401);
+        }
+
+        const result = await paymentService.getPaymentStatus(paymentId, userId);
+
+        res.set({
+            'Cache-Control':
+                'no-store, no-cache, must-revalidate, proxy-revalidate',
+            Pragma: 'no-cache',
+            Expires: '0',
+        });
+
+        res.status(200).json({
+            success: true,
+            data: result,
+        });
+    });
+
+    /**
      * GET /api/payments/pending
      * List pending payments (admin)
      */
@@ -112,6 +140,89 @@ class paymentController {
             status,
             page,
             limit,
+        });
+
+        res.status(200).json({
+            success: true,
+            data: result,
+        });
+    });
+
+    /**
+     * POST /api/sepay/webhook
+     * SePay webhook handler
+     */
+    sepayWebhook = catchAsync(async (req, res) => {
+        console.log('[SePay webhook] received', {
+            headers: {
+                authorization: req.get('authorization'),
+                xSePayToken: req.get('x-sepay-token'),
+                xSePaySignature: req.get('x-sepay-signature'),
+            },
+            body: req.body,
+        });
+
+        const extractApiKey = (value) => {
+            if (!value) return null;
+            const trimmed = String(value).trim();
+            const lower = trimmed.toLowerCase();
+            if (lower.startsWith('apikey ')) {
+                return trimmed.slice(7).trim();
+            }
+            if (lower.startsWith('bearer ')) {
+                return trimmed.slice(7).trim();
+            }
+            return trimmed;
+        };
+
+        const authorizationHeader = req.get('authorization');
+        const authorizationToken = extractApiKey(authorizationHeader);
+        const signatureHeader =
+            req.get('x-sepay-signature') ||
+            req.get('x-signature') ||
+            req.get('signature') ||
+            authorizationToken;
+        const tokenHeader =
+            req.get('x-sepay-token') ||
+            req.get('x-token') ||
+            authorizationToken;
+        const config = getSePayConfig();
+
+        verifySePayWebhook({
+            rawBody: req.rawBody || Buffer.from(JSON.stringify(req.body || {})),
+            signature: signatureHeader || tokenHeader,
+            token: config.webhookToken,
+            secret: config.webhookSecret,
+        });
+
+        const payload = req.body || {};
+        const data = payload.data || payload;
+        const amount =
+            data.transferAmount ||
+            data.amountIn ||
+            data.amount_in ||
+            data.amount ||
+            data.money ||
+            data.price ||
+            data.totalAmount ||
+            data.total_amount;
+        const description =
+            data.description ||
+            data.content ||
+            data.transactionContent ||
+            data.transferContent ||
+            data.note ||
+            data.add_info ||
+            data.addInfo ||
+            data.code ||
+            data.referenceCode ||
+            data.reference_code ||
+            data.reference;
+
+        const result = await paymentService.confirmSePayWebhook({
+            amount,
+            description,
+            payload: data,
         });
 
         res.status(200).json({

@@ -6,12 +6,33 @@ const {
     cartModel,
     cartItemModel,
     userModel,
+    voucherModel,
 } = require('@models');
 const { v4: uuidv4 } = require('uuid');
 const { sequelize } = require('@core/config/sequelize');
 const AppError = require('@core/utils/AppError');
 const { Op } = require('sequelize');
 const { buildVietQrImageUrl } = require('@core/utils/vietqr');
+
+const DEFAULT_PENDING_PAYMENT_TTL_MINUTES = 10;
+
+const getPendingPaymentTtlMinutes = () => {
+    const raw = Number(process.env.PENDING_PAYMENT_TTL_MINUTES);
+    if (Number.isFinite(raw) && raw > 0) {
+        return raw;
+    }
+    return DEFAULT_PENDING_PAYMENT_TTL_MINUTES;
+};
+
+const getPendingPaymentTtlMs = () => getPendingPaymentTtlMinutes() * 60 * 1000;
+
+const isPendingPaymentExpired = (payment) => {
+    if (!payment || !payment.createdAt) {
+        return false;
+    }
+    const createdAtMs = new Date(payment.createdAt).getTime();
+    return Date.now() - createdAtMs > getPendingPaymentTtlMs();
+};
 
 const buildAddressSnapshot = (address) => {
     return `${address.street}, ${address.ward ? address.ward + ', ' : ''}${address.district ? address.district + ', ' : ''}${address.city}, ${address.country}`;
@@ -55,11 +76,57 @@ const validateAndSnapshotCart = async (userId, transaction) => {
 };
 
 const PaymentService = {
+    expireStalePendingPayments: async () => {
+        const ttlMs = getPendingPaymentTtlMs();
+        const cutoff = new Date(Date.now() - ttlMs);
+
+        const [updated] = await pendingPaymentModel.update(
+            { payment_status: 'expired' },
+            {
+                where: {
+                    payment_status: 'pending',
+                    createdAt: { [Op.lt]: cutoff },
+                },
+            },
+        );
+
+        return { updated };
+    },
+    getPaymentStatus: async (paymentId, userId) => {
+        const payment = await pendingPaymentModel.findOne({
+            where: { payment_id: paymentId },
+        });
+
+        if (!payment) {
+            throw new AppError('Không tìm thấy phiên thanh toán', 404);
+        }
+
+        if (userId && payment.user_id !== userId) {
+            throw new AppError('Không có quyền truy cập', 403);
+        }
+
+        if (
+            payment.payment_status === 'pending' &&
+            isPendingPaymentExpired(payment)
+        ) {
+            await payment.update({ payment_status: 'expired' });
+        }
+
+        return {
+            payment_id: payment.payment_id,
+            payment_status: payment.payment_status,
+            order_id: payment.order_id,
+            expires_at: new Date(
+                payment.createdAt.getTime() + getPendingPaymentTtlMs(),
+            ),
+        };
+    },
     listPendingPayments: async ({
         status = 'pending',
         page = 1,
         limit = 20,
     } = {}) => {
+        await PaymentService.expireStalePendingPayments();
         const safePage = Math.max(1, Number(page) || 1);
         const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
         const offset = (safePage - 1) * safeLimit;
@@ -179,11 +246,6 @@ const PaymentService = {
                     );
                 }
 
-                await voucher.decrement('number_of_uses', {
-                    by: 1,
-                    transaction: t,
-                });
-
                 appliedVoucher = {
                     voucher_id: voucher.voucher_id,
                     code: voucher.code,
@@ -218,6 +280,12 @@ const PaymentService = {
                 }),
             };
 
+            const paymentMethod =
+                process.env.SEPAY_WEBHOOK_SECRET ||
+                process.env.SEPAY_WEBHOOK_TOKEN
+                    ? 'SEPAY'
+                    : 'BANK_TRANSFER';
+
             await pendingPaymentModel.create(
                 {
                     payment_id: paymentId,
@@ -225,7 +293,7 @@ const PaymentService = {
                     address_id,
                     delivery_address: addressSnapshot,
                     note,
-                    payment_method: 'BANK_TRANSFER',
+                    payment_method: paymentMethod,
                     payment_status: 'pending',
                     payment_code: paymentCode,
                     bank_code: bankCode,
@@ -244,6 +312,8 @@ const PaymentService = {
 
             await t.commit();
 
+            const expiresAt = new Date(Date.now() + getPendingPaymentTtlMs());
+
             return {
                 payment_id: paymentId,
                 payment_status: 'pending',
@@ -253,12 +323,103 @@ const PaymentService = {
                 voucher_applied: appliedVoucher ? appliedVoucher.code : null,
                 brand: orderBrand,
                 estimated_time: estimatedTime,
+                expires_at: expiresAt,
                 qr_info: qrInfo,
             };
         } catch (error) {
             if (t) await t.rollback();
             throw error;
         }
+    },
+
+    confirmSePayWebhook: async ({ amount, description, payload = {} }) => {
+        const transferType = String(
+            payload.transferType ||
+                payload.transfer_type ||
+                payload.type ||
+                '',
+        ).toLowerCase();
+
+        if (transferType && !['in', 'credit', 'deposit'].includes(transferType)) {
+            return {
+                payment_status: 'ignored',
+                reason: 'not_incoming_transfer',
+            };
+        }
+
+        const candidates = [
+            description,
+            payload.code,
+            payload.add_info,
+            payload.addInfo,
+            payload.transferContent,
+            payload.transactionContent,
+            payload.content,
+            payload.note,
+            payload.reference,
+            payload.referenceCode,
+            payload.reference_code,
+            payload.code,
+            payload.transactionCode,
+            payload.transaction_code,
+            payload.transferCode,
+            payload.transfer_code,
+            payload.payment_code,
+        ].filter(Boolean);
+
+        let transferCode = null;
+        for (const value of candidates) {
+            const match = String(value).match(/PAY\d+/);
+            if (match) {
+                transferCode = match[0];
+                break;
+            }
+        }
+        if (!transferCode) {
+            throw new AppError('Thiếu mã thanh toán', 400);
+        }
+
+        const payment = await pendingPaymentModel.findOne({
+            where: {
+                payment_code: transferCode,
+            },
+        });
+
+        if (!payment) {
+            throw new AppError('Không tìm thấy thanh toán', 404);
+        }
+
+        if (payment.payment_status === 'paid') {
+            return {
+                payment_status: 'paid',
+                order_id: payment.order_id,
+            };
+        }
+
+        if (
+            payment.payment_status === 'expired' ||
+            isPendingPaymentExpired(payment)
+        ) {
+            if (payment.payment_status !== 'expired') {
+                await payment.update({ payment_status: 'expired' });
+            }
+            return {
+                payment_status: 'expired',
+                order_id: payment.order_id,
+            };
+        }
+
+        const paidAmount =
+            typeof amount === 'string'
+                ? Number(amount.replace(/[^0-9.]/g, '')) || 0
+                : Number(amount) || 0;
+        const requiredAmount = Number(payment.total_amount) || 0;
+
+        if (paidAmount < requiredAmount) {
+            throw new AppError('Số tiền chưa đủ', 400);
+        }
+
+        return PaymentService.confirmPendingPayment(payment.payment_id);
     },
 
     confirmPendingPayment: async (paymentId) => {
@@ -272,6 +433,18 @@ const PaymentService = {
 
             if (!payment) {
                 throw new AppError('Không tìm thấy phiên thanh toán', 404);
+            }
+
+            if (payment.payment_status === 'expired') {
+                throw new AppError('Phiên thanh toán đã hết hạn', 400);
+            }
+
+            if (isPendingPaymentExpired(payment)) {
+                await payment.update(
+                    { payment_status: 'expired' },
+                    { transaction: t },
+                );
+                throw new AppError('Phiên thanh toán đã hết hạn', 400);
             }
 
             if (payment.payment_status === 'paid') {
@@ -310,6 +483,41 @@ const PaymentService = {
                         400,
                     );
                 }
+            }
+
+            if (payment.voucher_code) {
+                const baseAmount =
+                    Number(payment.original_amount) ||
+                    Number(payment.total_amount) +
+                        Number(payment.discount_amount || 0);
+                const voucher = await voucherModel.findOne({
+                    where: {
+                        code: payment.voucher_code,
+                        valid_from: { [Op.lte]: new Date() },
+                        valid_to: { [Op.gte]: new Date() },
+                        number_of_uses: { [Op.gt]: 0 },
+                    },
+                    transaction: t,
+                });
+
+                if (!voucher) {
+                    throw new AppError(
+                        'Mã giảm giá không hợp lệ hoặc đã hết hạn',
+                        400,
+                    );
+                }
+
+                if (baseAmount < voucher.min_purchase) {
+                    throw new AppError(
+                        `Đơn hàng tối thiểu ${voucher.min_purchase.toLocaleString('vi-VN')}₫ để áp dụng mã này`,
+                        400,
+                    );
+                }
+
+                await voucher.decrement('number_of_uses', {
+                    by: 1,
+                    transaction: t,
+                });
             }
 
             const orderId = uuidv4();

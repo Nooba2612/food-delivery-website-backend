@@ -1,5 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 
+// Removed Twilio integration as per requirement
+// const { createVerification } = require("@config/twilio");
 const { saveOTP, generateOTP, checkOTP, deleteOTP } = require('./auth.service');
 const {
     compareHashedData,
@@ -11,7 +13,6 @@ const {
     getUserById,
     getUserByEmail,
     changePassword,
-    updateUserById,
 } = require('./user.service');
 const {
     generateJWT,
@@ -208,12 +209,6 @@ class authController {
                         success: false,
                         message: 'Mật khẩu không chính xác',
                     });
-            }
-
-            if (user.role === 'Admin') {
-                const newTokenVersion = (user.tokenVersion || 0) + 1;
-                await updateUserById(user.user_id || user.userId, { tokenVersion: newTokenVersion });
-                user.tokenVersion = newTokenVersion; 
             }
 
             const isRemembered =
@@ -612,19 +607,6 @@ class authController {
             const jwt = require('jsonwebtoken');
             const decoded = jwt.verify(refreshToken, jwtRefreshSecret);
 
-            const dbUser = await getUserById(decoded.user_id);
-            if (!dbUser) {
-                return res.status(401).json({ success: false, message: 'User not found' });
-            }
-
-            const tokenVersionInDb = dbUser.tokenVersion || 0;
-            const tokenVersionInJwt = decoded.tokenVersion || 0;
-
-            if (dbUser.role === 'Admin' && tokenVersionInJwt !== tokenVersionInDb) {
-                console.log(`REFRESH DENIED: Token version mismatch for admin ${decoded.user_id}`);
-                return res.status(401).json({ success: false, message: 'Session expired' });
-            }
-
             const accessSecret =
                 process.env.JWT_SECRET || process.env.JWT_SECRET_KEY;
             const accessExpires = process.env.JWT_EXPIRES_IN ;
@@ -634,7 +616,6 @@ class authController {
                     user_id: decoded.user_id,
                     username: decoded.username,
                     role: decoded.role,
-                    tokenVersion: tokenVersionInDb,
                 },
                 accessSecret,
                 { expiresIn: accessExpires },
