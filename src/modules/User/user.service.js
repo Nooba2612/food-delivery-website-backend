@@ -68,7 +68,6 @@ const updateProfile = async (userId, updateData) => {
       throw new Error("User not found");
     }
 
-    // 1. Define allowed fields (Strict)
     const allowedFields = [
       "fullname",
       "username",
@@ -78,7 +77,6 @@ const updateProfile = async (userId, updateData) => {
     ];
     const updateObj = {};
 
-    // 2. Filter, Normalize (trim + collapse spaces)
     for (const field of allowedFields) {
       if (updateData[field] !== undefined) {
         let val = updateData[field];
@@ -91,7 +89,6 @@ const updateProfile = async (userId, updateData) => {
       }
     }
 
-    // 3. Validation
     if (
       updateObj.fullname &&
       (updateObj.fullname.length < 2 || updateObj.fullname.length > 255)
@@ -105,7 +102,6 @@ const updateProfile = async (userId, updateData) => {
       throw new Error("Username must be between 3 and 50 characters");
     }
 
-    // 4. Username Uniqueness Check
     if (updateObj.username && updateObj.username !== user.username) {
       const existingUser = await authUserService.findUserRecord({
         username: updateObj.username,
@@ -115,10 +111,8 @@ const updateProfile = async (userId, updateData) => {
       }
     }
 
-    // 5. Update using best practice
     await authUserService.updateUserById(userId, updateObj);
 
-    // 6. Return fresh data
     return await getProfile(userId);
   } catch (error) {
     throw error;
@@ -132,7 +126,6 @@ const changePassword = async (userId, oldPassword, newPassword) => {
       throw new Error("User not found");
     }
 
-    // Verify old password
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
       throw new Error("Old password incorrect");
